@@ -1,34 +1,44 @@
+# SentientFi
 
-
-An intelligent DeFi portfolio management platform built on Stellar that automatically rebalances crypto portfolios using real-time price data from Reflector oracles.
+An intelligent DeFi portfolio management platform built on the Stellar blockchain. SentientFi automatically rebalances crypto portfolios using real-time price data, configurable drift thresholds, and a queue-backed automation engine.
 
 ## Overview
 
-The Stellar Portfolio Rebalancer helps users maintain optimal asset allocation through automated rebalancing triggered by configurable drift thresholds. It combines Stellar's fast, low-cost infrastructure with Reflector's decentralized price feeds to provide enterprise-grade portfolio management for retail users.
+SentientFi helps users maintain optimal asset allocation through automated rebalancing triggered when a portfolio drifts beyond a user-defined threshold. It combines Stellar's fast, low-cost infrastructure with a professional risk management layer — including EWMA volatility, Value-at-Risk, circuit breakers, and concentration limits.
 
 ## Features
 
-- **Smart Rebalancing**: Automatically maintains target allocations with intelligent threshold-based triggers
-- **Multi-Wallet Support**: Compatible with Freighter, Rabet, xBull, and other Stellar wallets
-- **Real-time Price Feeds**: Powered by Reflector oracles with external API fallbacks
-- **Risk Management**: Built-in circuit breakers, concentration limits, and volatility detection
-- **Professional UI**: Modern, responsive interface with real-time portfolio visualization
-- **Demo Mode**: $10,000 simulated portfolio for testing and demonstrations
+- **Smart Rebalancing** — Automatically maintains target allocations with intelligent threshold-based triggers (1–50% drift)
+- **Multi-Wallet Support** — Compatible with Freighter, Rabet, xBull, and other Stellar wallets
+- **Real-time Price Feeds** — CoinGecko integration with smart caching; Reflector oracle integration in progress
+- **Risk Management** — Built-in circuit breakers, concentration limits (70% cap), EWMA volatility detection, and VaR/CVaR metrics
+- **Queue-backed Automation** — BullMQ + Redis worker system for reliable, non-blocking portfolio monitoring
+- **Notification System** — Email (SMTP) and webhook notifications for rebalance events, circuit breaker triggers, and risk changes
+- **Demo Mode** — Simulated $10,000 portfolio for testing without real funds
+- **Professional UI** — Responsive React interface with real-time charts, analytics, and export (CSV/JSON)
 
 ## Architecture
-stellar-portfolio-rebalancer/
-├── contracts/           # Soroban smart contracts
-├── frontend/           # React TypeScript frontend
-├── backend/            # Node.js Express API
-└── docs/              # Documentation
+
+```
+SentientFi/
+├── contracts/        # Soroban smart contracts (Rust)
+├── frontend/         # React + TypeScript UI (Vite)
+├── backend/          # Node.js + Express API
+├── deployment/       # Docker Compose + nginx config
+└── docs/             # API, migration, and notification docs
+```
 
 ### Tech Stack
 
-**Smart Contracts**: Rust + Soroban
-**Frontend**: React + TypeScript + Tailwind CSS
-**Backend**: Node.js + Express + TypeScript
-**Price Data**: Reflector + CoinGecko API
-**Blockchain**: Stellar Testnet
+| Layer | Technology |
+|-------|-----------|
+| Smart Contracts | Rust + Soroban SDK |
+| Frontend | React 18, TypeScript, Tailwind CSS, Recharts |
+| Backend | Node.js 18, Express, TypeScript |
+| Queue | BullMQ + Redis |
+| Database | PostgreSQL |
+| Price Data | CoinGecko API (Reflector oracle integration planned) |
+| Blockchain | Stellar Testnet / Mainnet |
 
 ## Quick Start
 
@@ -37,18 +47,23 @@ stellar-portfolio-rebalancer/
 - Node.js 18+
 - Rust + Cargo
 - Soroban CLI
-- Stellar wallet (Freighter/Rabet recommended)
+- Redis (for queue workers)
+- PostgreSQL 14+
+- A Stellar wallet — Freighter or Rabet recommended
 
 ### Installation
 
-1. **Clone the repository**
+**1. Clone the repository**
+
 ```bash
-git clone https://github.com/your-username/stellar-portfolio-rebalancer.git
-cd stellar-portfolio-rebalancer
+git clone https://github.com/grantFoxin/SentientFi.git
+cd SentientFi
+```
 
-Install dependencies
+**2. Install dependencies**
 
-bash# Frontend
+```bash
+# Frontend
 cd frontend && npm install
 
 # Backend
@@ -56,70 +71,75 @@ cd ../backend && npm install
 
 # Smart contracts
 cd ../contracts && cargo build
+```
 
-Environment setup
+**3. Configure environment**
 
-bash# Backend
+```bash
+# Backend
 cp backend/.env.example backend/.env
-# Edit backend/.env with your configuration
+# Edit backend/.env — at minimum set DATABASE_URL, REDIS_URL, and ADMIN_PUBLIC_KEYS
 
 # Frontend
 cp frontend/.env.example frontend/.env
-# Edit with contract addresses
+# Edit with contract address and network
+```
 
-**Database migrations** (when using PostgreSQL with `DATABASE_URL`): see [docs/MIGRATION.md](docs/MIGRATION.md). Apply with `cd backend && npm run db:migrate`; use `--dry-run` to preview.
+**4. Run database migrations**
 
-Configure SMTP for Email Notifications (Optional)
+```bash
+cd backend && npm run db:migrate
+```
 
-To enable email notifications for rebalancing events:
+See [docs/MIGRATION.md](docs/MIGRATION.md) for migration options including `--dry-run`.
 
-1. **Using Gmail**:
-   - Enable 2-Factor Authentication on your Google account
-   - Generate an App Password: https://myaccount.google.com/apppasswords
-   - Update `backend/.env`:
-     ```env
-     SMTP_HOST=smtp.gmail.com
-     SMTP_PORT=587
-     SMTP_SECURE=false
-     SMTP_USER=your-email@gmail.com
-     SMTP_PASS=your-app-password
-     SMTP_FROM=your-email@gmail.com
-     ```
+**5. Configure SMTP for email notifications (optional)**
 
-2. **Using Other Providers**:
-   - **SendGrid**: `smtp.sendgrid.net` (port 587)
-   - **Mailgun**: `smtp.mailgun.org` (port 587)
-   - **AWS SES**: `email-smtp.region.amazonaws.com` (port 587)
+Update `backend/.env`:
 
-3. **Test Configuration**:
-   ```bash
-   # After starting the backend, test email delivery
-   curl -X POST http://localhost:3001/api/notifications/test \
-     -H "Content-Type: application/json" \
-     -d '{"userId": "YOUR_STELLAR_ADDRESS", "eventType": "rebalance"}'
-   ```
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=your-email@gmail.com
+```
 
-Start development servers
+For Gmail, [generate an App Password](https://myaccount.google.com/apppasswords) after enabling 2FA. Other supported providers: SendGrid (`smtp.sendgrid.net:587`), Mailgun (`smtp.mailgun.org:587`), AWS SES.
 
-bash# Terminal 1 - Backend
+**6. Start development servers**
+
+```bash
+# Terminal 1 — Backend
 cd backend && npm run dev
 
-# Terminal 2 - Frontend
+# Terminal 2 — Frontend
 cd frontend && npm run dev
+```
 
-Access the application
+**7. Open the application**
 
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:3001 |
 
-Frontend: http://localhost:3000
-Backend API: http://localhost:3001
+## Smart Contract
 
-Smart Contract Deployment
-The portfolio rebalancer smart contract is deployed on Stellar testnet:
-Contract Address: CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
-To deploy your own instance:
-bashcd contracts
+The portfolio rebalancer contract is deployed on Stellar Testnet:
 
-# Build contract
+```
+Contract Address:  CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
+Reflector Oracle:  CDSWUUXGPWDZG76ISK6SUCVPZJMD5YUV66J2FXFXFGDX25XKZJIEITAO
+```
+
+**Deploy your own instance:**
+
+```bash
+cd contracts
+
+# Build WASM
 soroban contract build
 
 # Deploy to testnet
@@ -128,7 +148,7 @@ soroban contract deploy \
   --source deployer \
   --network testnet
 
-# Initialize contract
+# Initialize
 soroban contract invoke \
   --id YOUR_CONTRACT_ID \
   --source deployer \
@@ -136,61 +156,65 @@ soroban contract invoke \
   -- initialize \
   --admin YOUR_ADMIN_ADDRESS \
   --reflector_address CDSWUUXGPWDZG76ISK6SUCVPZJMD5YUV66J2FXFXFGDX25XKZJIEITAO
-Usage
-Creating a Portfolio
+```
 
-Connect your Stellar wallet
-Navigate to "Create Portfolio"
-Set target asset allocations (must sum to 100%)
-Configure rebalance threshold (1-50%)
-Enable/disable automatic rebalancing
-Submit transaction
+## Usage
 
-Managing Portfolios
+### Creating a Portfolio
 
-Dashboard: View current allocations and portfolio performance
-Rebalancing: Manual trigger or automatic execution when thresholds are exceeded
-History: Track rebalancing events and portfolio changes
+1. Connect your Stellar wallet
+2. Navigate to **Create Portfolio**
+3. Set target asset allocations (must sum to 100%)
+4. Configure rebalance threshold (1–50%)
+5. Enable or disable automatic rebalancing
+6. Submit the transaction
 
-Safety Features
+### Dashboard
 
-Cooldown Periods: Minimum 1 hour between rebalances
-Volatility Detection: Pauses rebalancing during extreme market conditions
-Concentration Limits: Prevents over-allocation to single assets
-Circuit Breakers: Multiple safety checks before trade execution
+- **Overview** — Current allocations vs. targets, drift indicators
+- **Analytics** — Performance chart, risk metrics (VaR, CVaR, volatility)
+- **Notifications** — Configure email and webhook preferences
+- **History** — Full rebalancing event log with on-chain sync
 
-Notification System
+### Safety Features
 
-Email Notifications: Get notified via email when portfolios are rebalanced
-Webhook Notifications: Integrate with external systems via webhooks
-Event Types: Rebalance, circuit breaker, price movement, risk changes
-Customizable: Configure which events to receive per user
+| Feature | Detail |
+|---------|--------|
+| Cooldown Periods | Minimum 1 hour between rebalances |
+| Circuit Breakers | Auto-pause during extreme volatility |
+| Concentration Limits | No single asset can exceed 70% |
+| Volatility Detection | EWMA-based volatility gating |
 
-API Reference
-Canonical API namespace: `/api/v1/*`  
-Legacy compatibility namespace (deprecated, temporary): `/api/*`
+## API Reference
 
-Portfolio Management
-bash# Create portfolio
-POST /api/v1/portfolio
+Base URL: `http://localhost:3001/api`
+
+### Portfolio Management
+
+```bash
+# Create a portfolio
+POST /api/portfolio
 {
   "userAddress": "STELLAR_ADDRESS",
-  "allocations": {"XLM": 40, "USDC": 35, "BTC": 25},
+  "allocations": { "XLM": 40, "USDC": 35, "BTC": 25 },
   "threshold": 5
 }
 
 # Get portfolio
-GET /api/v1/portfolio/:id
+GET /api/portfolio/:id
 
-# Execute rebalance
-POST /api/v1/portfolio/:id/rebalance
+# Execute manual rebalance
+POST /api/portfolio/:id/rebalance
 
-# Get rebalance status
-GET /api/v1/portfolio/:id/rebalance-status
+# Get rebalance plan (preview)
+GET /api/portfolio/:id/rebalance-plan
+```
 
-Notification Management
-bash# Subscribe to notifications
-POST /api/v1/notifications/subscribe
+### Notifications
+
+```bash
+# Subscribe
+POST /api/notifications/subscribe
 {
   "userId": "STELLAR_ADDRESS",
   "emailEnabled": true,
@@ -200,141 +224,202 @@ POST /api/v1/notifications/subscribe
   "events": {
     "rebalance": true,
     "circuitBreaker": true,
-    "priceMovement": true,
+    "priceMovement": false,
     "riskChange": true
   }
 }
 
-# Get notification preferences
-GET /api/v1/notifications/preferences?userId=STELLAR_ADDRESS
+# Get preferences
+GET /api/notifications/preferences?userId=STELLAR_ADDRESS
 
-# Unsubscribe from notifications
-DELETE /api/v1/notifications/unsubscribe?userId=STELLAR_ADDRESS
+# Unsubscribe
+DELETE /api/notifications/unsubscribe?userId=STELLAR_ADDRESS
+```
 
-# Test notification delivery
-POST /api/v1/notifications/test
-{
-  "userId": "STELLAR_ADDRESS",
-  "eventType": "rebalance"
-}
+### Price Data
 
-# Test all notification types
-POST /api/v1/notifications/test-all
-{
-  "userId": "STELLAR_ADDRESS"
-}
+```bash
+# Current prices
+GET /api/prices
 
-Price Data
-bash# Current prices
-GET /api/v1/prices
+# Enhanced prices with alerts
+GET /api/prices/enhanced
+```
 
-# Portfolio analysis
-GET /api/v1/portfolio/:id/rebalance-plan
-Configuration
-Environment Variables
-Backend (.env):
-envCONTRACT_ADDRESS=CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
+### Auto-Rebalancer (Admin)
+
+Requires `ADMIN_PUBLIC_KEYS` to be set in `backend/.env`.
+
+```bash
+# Start auto-rebalancer
+POST /api/auto-rebalancer/start
+
+# Stop auto-rebalancer
+POST /api/auto-rebalancer/stop
+
+# Force immediate check
+POST /api/auto-rebalancer/force-check
+
+# View auto-rebalancer history
+GET /api/auto-rebalancer/history
+```
+
+Full API documentation: [docs/API.md](docs/API.md)
+
+## Configuration
+
+### Backend (`backend/.env`)
+
+```env
+# Blockchain
+CONTRACT_ADDRESS=CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
 STELLAR_NETWORK=testnet
+
+# Server
 PORT=3001
-Frontend (.env.local):
-envVITE_CONTRACT_ADDRESS=CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
+NODE_ENV=development
+
+# Database
+DATABASE_URL=postgresql://portfolio_user:portfolio_pass@localhost:5432/stellar_portfolio
+
+# Redis (queue)
+REDIS_URL=redis://localhost:6379
+
+# Admin
+# Comma-separated Stellar public keys authorized for admin routes
+ADMIN_PUBLIC_KEYS=YOUR_ADMIN_STELLAR_ADDRESS
+
+# Email (optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=your-email@gmail.com
+```
+
+### Frontend (`frontend/.env`)
+
+```env
+VITE_CONTRACT_ADDRESS=CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I
 VITE_STELLAR_NETWORK=testnet
-Development
-Project Structure
+VITE_API_URL=http://localhost:3001
+```
+
+## Development
+
+### Project Structure
+
+```
 frontend/src/
-├── components/         # React components
-├── utils/             # Utility functions
-├── services/          # API and blockchain services
-└── types/             # TypeScript definitions
+├── components/       # React components (Dashboard, PortfolioSetup, etc.)
+├── hooks/            # usePortfolio, useReflector
+├── services/         # Browser price service
+├── utils/            # Calculations, wallet adapters, export
+└── context/          # ThemeContext
 
 backend/src/
-├── api/               # Express routes
-├── services/          # Business logic
-├── monitoring/        # Portfolio monitoring
-└── middleware/        # Express middleware
+├── api/              # Express routes and validation
+├── services/         # Business logic (rebalancing, notifications, risk)
+├── queue/            # BullMQ workers and schedulers
+├── monitoring/       # Portfolio monitoring
+├── db/               # Database client, migrations, seed
+└── middleware/       # Auth, rate limiting, idempotency, error handler
 
 contracts/src/
-├── lib.rs            # Main contract logic
-├── types.rs          # Contract data types
-└── reflector.rs      # Oracle integration
-Testing
-bash# Frontend tests
+├── lib.rs            # Main contract entry points
+├── portfolio.rs      # Portfolio management logic
+├── types.rs          # Contract data structures
+├── reflector.rs      # Reflector oracle client interface
+└── test.rs           # Soroban unit tests
+```
+
+### Running Tests
+
+```bash
+# Frontend unit tests
 cd frontend && npm test
 
-# Backend tests
+# Backend tests (requires running Postgres + Redis)
 cd backend && npm test
 
 # Smart contract tests
 cd contracts && cargo test
+```
 
-Docker Deployment
-bash# Validate compose file
+### Docker Deployment
+
+```bash
+# Validate compose configuration
 docker compose -f deployment/docker-compose.yml config
 
-# Build deployable images
+# Build images
 docker compose -f deployment/docker-compose.yml build frontend backend
 
-# Start deployment stack
+# Start full stack
 docker compose -f deployment/docker-compose.yml up --build -d
+```
 
-Deployment file layout:
-- deployment/docker-compose.yml
-- backend/Dockerfile
-- frontend/Dockerfile
-- frontend/nginx.conf
-Hackathon Submission
-This project was built for [Hackathon Name] and demonstrates:
+Deployment files:
 
-Stellar Integration: Native blockchain functionality with testnet deployment
-Reflector Usage: Real oracle integration for price feeds
-DeFi Innovation: Automated portfolio management with risk controls
-Production Quality: Professional UI/UX and robust error handling
+```
+deployment/
+├── docker-compose.yml
+├── deploy.sh
+└── nginx.conf
+backend/Dockerfile
+frontend/Dockerfile
+frontend/nginx.conf
+```
 
-Demo Features
+## Roadmap
 
-Multi-wallet connection support
-Real-time price visualization
-Interactive portfolio creation
-Simulated rebalancing with realistic delays
-Comprehensive monitoring and alerting
+### Phase 1 — Current
 
-Roadmap
-Phase 1 (Current)
+- ✅ Soroban smart contract deployment
+- ✅ Basic portfolio management (create, rebalance, history)
+- ✅ Demo mode
+- ✅ Multi-wallet support (Freighter, Rabet, xBull)
+- ✅ Email + webhook notifications
+- ✅ Risk metrics (VaR, CVaR, EWMA volatility)
+- ✅ Queue-backed auto-rebalancer
 
-✅ Smart contract deployment
-✅ Basic portfolio management
-✅ Demo mode functionality
-✅ Multi-wallet support
+### Phase 2 — Next
 
-Phase 2 (Next)
+- 🔄 Reflector oracle backend integration (real on-chain price feeds)
+- 🔄 DEX integration for live trade execution
+- 🔄 Advanced rebalancing strategies (tax-loss harvesting, threshold bands)
+- 🔄 Webhook signature verification (HMAC-SHA256)
+- 🔄 Portfolio analytics and backtesting
 
-🔄 Real DEX integration
-🔄 Advanced rebalancing strategies
-🔄 Portfolio analytics and backtesting
-🔄 Mobile application
+### Phase 3 — Future
 
-Phase 3 (Future)
+- ⏳ Institutional features (multi-sig, audit logs)
+- ⏳ Cross-chain portfolio support
+- ⏳ Yield farming integration
+- ⏳ Mobile application
+- ⏳ Advanced risk modeling
 
-⏳ Institutional features
-⏳ Cross-chain portfolio support
-⏳ Yield farming integration
-⏳ Advanced risk modeling
+## Contributing
 
-Contributing
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit your changes: `git commit -m 'feat: add your feature'`
+4. Push to the branch: `git push origin feat/your-feature`
+5. Open a Pull Request
 
-Fork the repository
-Create a feature branch (git checkout -b feature/amazing-feature)
-Commit changes (git commit -m 'Add amazing feature')
-Push to branch (git push origin feature/amazing-feature)
-Open a Pull Request
+Please ensure `npm test` and `cargo test` pass before submitting.
 
-License
-This project is licensed under the MIT License - see the LICENSE file for details.
-Acknowledgments
+## License
 
-Stellar Development Foundation for the robust blockchain infrastructure
-Reflector Protocol for reliable price oracle services
-Soroban for smart contract capabilities
-Community for wallet integrations and ecosystem support
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-Built with ❤️ for the Stellar ecosystem
+## Acknowledgments
+
+- [Stellar Development Foundation](https://stellar.org) — blockchain infrastructure
+- [Reflector Protocol](https://reflector.network) — price oracle services
+- [Soroban](https://soroban.stellar.org) — smart contract platform
+- Open-source wallet teams — Freighter, Rabet, xBull
+
+---
+
+Built for the Stellar ecosystem.
