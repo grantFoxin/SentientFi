@@ -2,8 +2,6 @@
 import { Router } from 'express'
 import { StellarService } from '../services/stellar.js'
 import { ReflectorService } from '../services/reflector.js'
-import { RebalanceHistoryService } from '../services/rebalanceHistory.js'
-import { RiskManagementService } from '../services/riskManagements.js'
 import { portfolioStorage } from '../services/portfolioStorage.js'
 import { CircuitBreakers } from '../services/circuitBreakers.js'
 import { analyticsService } from '../services/analyticsService.js'
@@ -11,8 +9,54 @@ import { notificationService } from '../services/notificationService.js'
 import { contractEventIndexerService } from '../services/contractEventIndexer.js'
 import { logger } from '../utils/logger.js'
 import { idempotencyMiddleware } from '../middleware/idempotency.js'
+import { requireAdmin } from '../middleware/auth.js'
+import { writeRateLimiter } from '../middleware/rateLimit.js'
+import { blockDebugInProduction } from '../middleware/debugGate.js'
+import { riskManagementService, rebalanceHistoryService } from '../services/serviceContainer.js'
+import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
+import { getQueueMetrics } from '../queue/queueMetrics.js'
 
 const router = Router()
+
+const stellarService = new StellarService()
+const reflectorService = new ReflectorService()
+const featureFlags = getFeatureFlags()
+const publicFeatureFlags = getPublicFeatureFlags()
+
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
+}
+
+function getErrorObject(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+        return { message: error.message, stack: error.stack }
+    }
+    return { message: String(error) }
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+    if (value === undefined || value === null || value === '') return undefined
+    const str = String(value).toLowerCase()
+    if (str === 'true' || str === '1') return true
+    if (str === 'false' || str === '0') return false
+    return undefined
+}
+
+function getPortfolioAllocationsAsRecord(portfolio: any): Record<string, number> {
+    if (!portfolio || !portfolio.allocations) return {}
+    if (typeof portfolio.allocations === 'string') {
+        return JSON.parse(portfolio.allocations)
+    }
+    return portfolio.allocations
+}
+
+let autoRebalancer: any = null
+try {
+    const { AutoRebalancerService } = await import('../services/autoRebalancer.js')
+    autoRebalancer = new AutoRebalancerService()
+} catch {
+    // autoRebalancer not available
+}
 
 const parseOptionalTimestamp = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === '') return undefined
@@ -50,7 +94,7 @@ router.get('/rebalance/history', async (req, res) => {
             portfolioId || undefined,
             limit,
             {
-                eventSource: source,
+                eventSource: source === 'all' ? undefined : source,
                 startTimestamp,
                 endTimestamp
             }
