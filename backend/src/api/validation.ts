@@ -1,4 +1,21 @@
 import { z } from 'zod';
+import { StrKey } from '@stellar/stellar-sdk';
+
+/**
+ * Validates that a value is a well-formed Stellar ed25519 public key (G... address).
+ * Uses the Stellar SDK's StrKey check, which verifies length, alphabet, version byte
+ * and CRC16 checksum — far stricter and more correct than a bare regex.
+ */
+export function isValidStellarPublicKey(value: unknown): value is string {
+    return typeof value === 'string' && StrKey.isValidEd25519PublicKey(value);
+}
+
+// Reusable schema for a Stellar public key used as a userId/address.
+export const stellarAddressSchema = z
+    .string()
+    .refine(isValidStellarPublicKey, {
+        message: 'must be a valid Stellar public key (G... address)',
+    });
 
 // Strict boolean parsing (handles "true", "false", true, false)
 const strictBoolean = z.preprocess((val) => {
