@@ -214,4 +214,4 @@ keypairs.json
 
 # Monitoring and logs
 monitoring/logs/
-*.pid
+*.pidbackend/data/
