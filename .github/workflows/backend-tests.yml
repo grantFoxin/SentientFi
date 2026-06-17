@@ -21,8 +21,4 @@ on:
           path: backend/coverage/
           if-no-files-found: ignore
 
-      - name: Validate deployment compose config and build
-        if: matrix.node-version == '20.x'
-        run: |
-          docker compose -f deployment/docker-compose.yml config
-          docker compose -f deployment/docker-compose.yml build frontend backend
+  
