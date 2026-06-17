@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: portfolio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-portfolio_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portfolio_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-stellar_portfolio}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio_user -d stellar_portfolio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   frontend:
     build:
       context: ../frontend
@@ -21,6 +39,8 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3001
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-portfolio_user}:${POSTGRES_PASSWORD:-portfolio_pass}@postgres:5432/${POSTGRES_DB:-stellar_portfolio}
+      - REDIS_URL=redis://redis:6379
       - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I}
       - REFLECTOR_ADDRESS=${REFLECTOR_ADDRESS:-}
       - STELLAR_NETWORK=${STELLAR_NETWORK:-testnet}
@@ -33,7 +53,10 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./logs:/app/logs
 
@@ -59,6 +82,8 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3002
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-portfolio_user}:${POSTGRES_PASSWORD:-portfolio_pass}@postgres:5432/${POSTGRES_DB:-stellar_portfolio}
+      - REDIS_URL=redis://redis:6379
       - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I}
       - STELLAR_NETWORK=${STELLAR_NETWORK:-testnet}
       - STELLAR_HORIZON_URL=${STELLAR_HORIZON_URL:-https://horizon-testnet.stellar.org}
@@ -67,10 +92,15 @@ services:
       - ALLOW_FALLBACK_PRICES=${ALLOW_FALLBACK_PRICES:-true}
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - redis
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      backend:
+        condition: service_started
 
 volumes:
+  postgres_data:
   redis_data:
 
 networks:
