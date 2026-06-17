@@ -16,6 +16,7 @@ import { writeRateLimiter } from '../middleware/rateLimit.js'
 import { getQueueMetrics } from '../queue/queueMetrics.js'
 import { blockDebugInProduction } from '../middleware/debugGate.js'
 import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
+import { isValidStellarPublicKey } from './validation.js'
 
 const stellarService = new StellarService()
 const reflectorService = new ReflectorService()
@@ -645,6 +646,13 @@ router.post('/notifications/subscribe', writeRateLimiter, idempotencyMiddleware,
             })
         }
 
+        if (!isValidStellarPublicKey(userId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId must be a valid Stellar public key (G... address)'
+            })
+        }
+
         if (emailEnabled === undefined || webhookEnabled === undefined || !events) {
             return res.status(400).json({
                 success: false,
@@ -724,6 +732,13 @@ router.get('/notifications/preferences', async (req, res) => {
             })
         }
 
+        if (!isValidStellarPublicKey(userId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId must be a valid Stellar public key (G... address)'
+            })
+        }
+
         const preferences = notificationService.getPreferences(userId)
 
         if (!preferences) {
@@ -757,6 +772,13 @@ router.delete('/notifications/unsubscribe', async (req, res) => {
             return res.status(400).json({
                 success: false,
                 error: 'userId query parameter is required'
+            })
+        }
+
+        if (!isValidStellarPublicKey(userId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId must be a valid Stellar public key (G... address)'
             })
         }
 
