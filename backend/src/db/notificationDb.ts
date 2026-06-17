@@ -6,6 +6,7 @@ export interface NotificationPreferencesRow {
     email_address: string | null
     webhook_enabled: number
     webhook_url: string | null
+    webhook_secret: string | null
     event_rebalance: number
     event_circuit_breaker: number
     event_price_movement: number
@@ -20,6 +21,7 @@ export interface NotificationPreferences {
     emailAddress?: string
     webhookEnabled: boolean
     webhookUrl?: string
+    webhookSecret?: string
     events: {
         rebalance: boolean
         circuitBreaker: boolean
@@ -66,6 +68,7 @@ function rowToPreferences(r: NotificationPreferencesRow): NotificationPreference
         emailAddress: r.email_address || undefined,
         webhookEnabled: r.webhook_enabled === 1,
         webhookUrl: r.webhook_url || undefined,
+        webhookSecret: r.webhook_secret || undefined,
         events: {
             rebalance: r.event_rebalance === 1,
             circuitBreaker: r.event_circuit_breaker === 1,
@@ -83,15 +86,16 @@ export function dbSaveNotificationPreferences(preferences: NotificationPreferenc
 
     db.prepare(`
         INSERT INTO notification_preferences 
-            (user_id, email_enabled, email_address, webhook_enabled, webhook_url, 
+            (user_id, email_enabled, email_address, webhook_enabled, webhook_url, webhook_secret,
              event_rebalance, event_circuit_breaker, event_price_movement, event_risk_change,
              created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (user_id) DO UPDATE SET
             email_enabled = excluded.email_enabled,
             email_address = excluded.email_address,
             webhook_enabled = excluded.webhook_enabled,
             webhook_url = excluded.webhook_url,
+            webhook_secret = excluded.webhook_secret,
             event_rebalance = excluded.event_rebalance,
             event_circuit_breaker = excluded.event_circuit_breaker,
             event_price_movement = excluded.event_price_movement,
@@ -103,6 +107,7 @@ export function dbSaveNotificationPreferences(preferences: NotificationPreferenc
         preferences.emailAddress || null,
         preferences.webhookEnabled ? 1 : 0,
         preferences.webhookUrl || null,
+        preferences.webhookSecret || null,
         preferences.events.rebalance ? 1 : 0,
         preferences.events.circuitBreaker ? 1 : 0,
         preferences.events.priceMovement ? 1 : 0,
@@ -140,4 +145,12 @@ export function dbDeleteNotificationPreferences(userId: string): boolean {
     
     const result = db.prepare('DELETE FROM notification_preferences WHERE user_id = ?').run(userId)
     return result.changes > 0
+}
+
+export function dbUpdateWebhookSecret(userId: string, secret: string): void {
+    ensureNotificationTable()
+    const db = getDb()
+    
+    const now = new Date().toISOString()
+    db.prepare('UPDATE notification_preferences SET webhook_secret = ?, updated_at = ? WHERE user_id = ?').run(secret, now, userId)
 }

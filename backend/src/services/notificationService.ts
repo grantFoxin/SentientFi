@@ -3,9 +3,11 @@ import {
   dbSaveNotificationPreferences,
   dbGetNotificationPreferences,
   dbGetAllNotificationPreferences,
+  dbUpdateWebhookSecret,
   type NotificationPreferences,
 } from "../db/notificationDb.js";
 import nodemailer from "nodemailer";
+import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 
 // ─────────────────────────────────────────────
 // Types
@@ -29,6 +31,50 @@ interface NotificationProvider {
     payload: NotificationPayload,
     preferences: NotificationPreferences,
   ): Promise<void>;
+}
+
+// ─────────────────────────────────────────────
+// Webhook Signature Helpers
+// ─────────────────────────────────────────────
+
+function signPayload(payload: any, secret: string): { signature: string; timestamp: string } {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const payloadString = JSON.stringify(payload);
+  const signatureInput = `${timestamp}.${payloadString}`;
+  const signature = createHmac('sha256', secret)
+    .update(signatureInput)
+    .digest('hex');
+  return { signature: `sha256=${signature}`, timestamp };
+}
+
+function verifyWebhookSignature(
+  payload: any,
+  signature: string,
+  timestamp: string,
+  secret: string,
+  toleranceSeconds: number = 300
+): boolean {
+  // Check timestamp tolerance (5 minutes)
+  const currentTime = Math.floor(Date.now() / 1000);
+  if (Math.abs(currentTime - parseInt(timestamp)) > toleranceSeconds) {
+    return false;
+  }
+  
+  // Compute expected signature
+  const payloadString = JSON.stringify(payload);
+  const signatureInput = `${timestamp}.${payloadString}`;
+  const expectedSignature = createHmac('sha256', secret)
+    .update(signatureInput)
+    .digest('hex');
+  
+  // Timing-safe comparison
+  try {
+    const signatureBuffer = Buffer.from(signature.replace('sha256=', ''), 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    return timingSafeEqual(signatureBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -56,24 +102,34 @@ class WebhookProvider implements NotificationProvider {
       userId: payload.userId,
     };
 
-    await this.sendWithRetry(preferences.webhookUrl, webhookPayload, 0);
+    await this.sendWithRetry(preferences.webhookUrl, webhookPayload, 0, preferences.webhookSecret);
   }
 
   private async sendWithRetry(
     url: string,
     payload: any,
     attempt: number,
+    webhookSecret?: string,
   ): Promise<void> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "User-Agent": "StellarPortfolioRebalancer/1.0",
+      };
+
+      // Add HMAC signature if secret is provided
+      if (webhookSecret) {
+        const { signature, timestamp } = signPayload(payload, webhookSecret);
+        headers["X-Webhook-Signature"] = signature;
+        headers["X-Webhook-Timestamp"] = timestamp;
+      }
+
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "StellarPortfolioRebalancer/1.0",
-        },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -88,6 +144,7 @@ class WebhookProvider implements NotificationProvider {
         url,
         event: payload.event,
         userId: payload.userId,
+        hasSignature: !!webhookSecret,
       });
     } catch (error) {
       const errorMessage =
@@ -101,7 +158,7 @@ class WebhookProvider implements NotificationProvider {
       // Retry once
       if (attempt < this.MAX_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        await this.sendWithRetry(url, payload, attempt + 1);
+        await this.sendWithRetry(url, payload, attempt + 1, webhookSecret);
       } else {
         throw error;
       }
@@ -280,7 +337,7 @@ export class NotificationService {
   /**
    * Subscribe or update notification preferences
    */
-  subscribe(preferences: NotificationPreferences): void {
+  subscribe(preferences: NotificationPreferences): NotificationPreferences {
     // Validate webhook URL if provided
     if (preferences.webhookEnabled && preferences.webhookUrl) {
       if (!this.isValidWebhookUrl(preferences.webhookUrl)) {
@@ -292,6 +349,11 @@ export class NotificationService {
       throw new Error("Email address is required when email is enabled");
     }
 
+    // Generate webhook secret if webhook is enabled and no secret exists
+    if (preferences.webhookEnabled && !preferences.webhookSecret) {
+      preferences.webhookSecret = randomBytes(32).toString('hex');
+    }
+
     // Save to database
     dbSaveNotificationPreferences(preferences);
 
@@ -299,7 +361,10 @@ export class NotificationService {
       userId: preferences.userId,
       emailEnabled: preferences.emailEnabled,
       webhookEnabled: preferences.webhookEnabled,
+      hasWebhookSecret: !!preferences.webhookSecret,
     });
+
+    return preferences;
   }
 
   /**
@@ -383,6 +448,25 @@ export class NotificationService {
    */
   getAllPreferences(): NotificationPreferences[] {
     return dbGetAllNotificationPreferences();
+  }
+
+  /**
+   * Rotate webhook secret for a user
+   */
+  async rotateWebhookSecret(userId: string): Promise<string> {
+    const preferences = this.getPreferences(userId);
+    if (!preferences) {
+      throw new Error("User not found");
+    }
+    if (!preferences.webhookEnabled) {
+      throw new Error("Webhook notifications not enabled");
+    }
+
+    const newSecret = randomBytes(32).toString('hex');
+    dbUpdateWebhookSecret(userId, newSecret);
+
+    logger.info("Webhook secret rotated", { userId });
+    return newSecret;
   }
 }
 

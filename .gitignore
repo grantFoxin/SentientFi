@@ -215,3 +215,6 @@ keypairs.json
 # Monitoring and logs
 monitoring/logs/
 *.pid
+
+# Backend data
+backend/data/
