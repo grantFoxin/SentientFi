@@ -167,7 +167,7 @@ impl PortfolioRebalancer {
                 }
             } else {
                 // If price is missing, we can't safely rebalance
-                panic!("Missing price data");
+                return Err(Error::MissingPriceData);
             }
         }
 

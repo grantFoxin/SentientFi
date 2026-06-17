@@ -35,4 +35,5 @@ pub enum Error {
     AlreadyInitialized = 7,
     InvalidThreshold = 8,
     InvalidAmount = 9,
+    MissingPriceData = 10,
 }
