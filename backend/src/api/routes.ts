@@ -12,6 +12,8 @@ import { contractEventIndexerService } from '../services/contractEventIndexer.js
 import { logger } from '../utils/logger.js'
 import { idempotencyMiddleware } from '../middleware/idempotency.js'
 
+const router = Router()
+
 const parseOptionalTimestamp = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === '') return undefined
     if (typeof value !== 'string') return undefined
