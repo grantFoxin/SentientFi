@@ -248,20 +248,33 @@ GET /api/prices/enhanced
 
 ### Auto-Rebalancer (Admin)
 
-Requires `ADMIN_PUBLIC_KEYS` to be set in `backend/.env`.
+**Authentication Required:** These routes require `ADMIN_PUBLIC_KEYS` to be configured in `backend/.env`. If not set, all admin routes will return `HTTP 503 Service Unavailable` with error message "Admin auth not configured".
+
+**Required Headers:**
+- `X-Public-Key`: Your Stellar public key (must be listed in ADMIN_PUBLIC_KEYS)
+- `X-Message`: Unix timestamp in milliseconds
+- `X-Signature`: Ed25519 signature of the message using your Stellar secret key
 
 ```bash
 # Start auto-rebalancer
 POST /api/auto-rebalancer/start
+# Headers: X-Public-Key, X-Message, X-Signature
 
 # Stop auto-rebalancer
 POST /api/auto-rebalancer/stop
+# Headers: X-Public-Key, X-Message, X-Signature
 
 # Force immediate check
 POST /api/auto-rebalancer/force-check
+# Headers: X-Public-Key, X-Message, X-Signature
 
 # View auto-rebalancer history
 GET /api/auto-rebalancer/history
+# Headers: X-Public-Key, X-Message, X-Signature
+
+# Sync on-chain rebalance history
+POST /api/rebalance/history/sync-onchain
+# Headers: X-Public-Key, X-Message, X-Signature
 ```
 
 Full API documentation: [docs/API.md](docs/API.md)
@@ -269,6 +282,21 @@ Full API documentation: [docs/API.md](docs/API.md)
 ## Configuration
 
 ### Backend (`backend/.env`)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CONTRACT_ADDRESS` | Yes | Soroban smart contract address |
+| `STELLAR_NETWORK` | Yes | Network: `testnet` or `mainnet` |
+| `PORT` | No | Server port (default: 3001) |
+| `NODE_ENV` | No | Environment: `development`, `production` |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `REDIS_URL` | No | Redis connection for queue workers |
+| `ADMIN_PUBLIC_KEYS` | Recommended | Comma-separated Stellar public keys authorized for admin routes (`/api/auto-rebalancer/*`, `/api/rebalance/history/sync-onchain`). Required to use admin functionality. |
+| `SMTP_HOST` | No | Email server host (for notifications) |
+| `SMTP_PORT` | No | Email server port |
+| `SMTP_USER` | No | Email username |
+| `SMTP_PASS` | No | Email password or app password |
+| `SMTP_FROM` | No | Email sender address |
 
 ```env
 # Blockchain
@@ -285,11 +313,15 @@ DATABASE_URL=postgresql://portfolio_user:portfolio_pass@localhost:5432/stellar_p
 # Redis (queue)
 REDIS_URL=redis://localhost:6379
 
-# Admin
+# Admin Authentication
 # Comma-separated Stellar public keys authorized for admin routes
+# Required for: /api/auto-rebalancer/start, /api/auto-rebalancer/stop, 
+#              /api/auto-rebalancer/force-check, /api/auto-rebalancer/history,
+#              /api/rebalance/history/sync-onchain
+# Example: GADMIN123...,GADMIN456...
 ADMIN_PUBLIC_KEYS=YOUR_ADMIN_STELLAR_ADDRESS
 
-# Email (optional)
+# Email Notifications (optional)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
@@ -398,6 +430,68 @@ frontend/nginx.conf
 - ⏳ Yield farming integration
 - ⏳ Mobile application
 - ⏳ Advanced risk modeling
+
+## Troubleshooting
+
+### Admin Routes Return 503 Error
+
+**Problem:** Admin routes (`/api/auto-rebalancer/*`, `/api/rebalance/history/sync-onchain`) return `HTTP 503 Service Unavailable` with error "Admin auth not configured".
+
+**Solution:** Configure `ADMIN_PUBLIC_KEYS` in `backend/.env`:
+
+1. **Add your Stellar public key to .env:**
+   ```env
+   ADMIN_PUBLIC_KEYS=GADMIN123ABCDEF456GHIJK789LMNOP012QRSTU345VWXYZ678901234
+   ```
+
+2. **For multiple admins (comma-separated):**
+   ```env
+   ADMIN_PUBLIC_KEYS=GADMIN123...,GADMIN456...,GADMIN789...
+   ```
+
+3. **Restart the backend server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Verify the warning is gone:**
+   - On startup, you should NOT see: `⚠️ ADMIN_PUBLIC_KEYS is not set — admin routes will return 503`
+   - If you still see the warning, check your `.env` file syntax
+
+**Note:** The `ADMIN_PUBLIC_KEYS` variable is intentionally not set by default for security. This prevents accidental admin access on fresh installations.
+
+### Email Notifications Not Working
+
+**Problem:** Email notifications fail to send.
+
+**Common causes:**
+- Missing SMTP configuration in `.env`
+- Incorrect Gmail app password (use app password, not regular password)
+- SMTP server not accessible
+
+**Solution:**
+1. Configure SMTP settings in `backend/.env`
+2. For Gmail: [Generate an App Password](https://myaccount.google.com/apppasswords)
+3. Test with `/api/notifications/test` endpoint
+
+### Database Connection Issues
+
+**Problem:** Backend fails to start with database errors.
+
+**Solution:**
+1. Ensure PostgreSQL is running
+2. Verify `DATABASE_URL` in `.env`
+3. Run migrations: `npm run db:migrate`
+4. Check database permissions
+
+### Redis Connection Issues
+
+**Problem:** Queue workers not processing or auto-rebalancer not working.
+
+**Solution:**
+1. Ensure Redis is running
+2. Verify `REDIS_URL` in `.env`  
+3. Check Redis connection: `redis-cli ping`
 
 ## Contributing
 
