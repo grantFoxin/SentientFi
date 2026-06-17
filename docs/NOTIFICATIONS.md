@@ -426,6 +426,12 @@ Content-Type: application/json
 
 **Note:** The `webhookSecret` is only included when a new secret is generated (first subscription or when webhook is newly enabled). Store this secret securely for signature verification.
 
+**Important Security Note:** The webhook secret is **only** returned in two scenarios:
+1. **Subscribe response** (`POST /api/notifications/subscribe`): Only when a new secret is generated
+2. **Rotation response** (`POST /api/notifications/rotate-webhook-secret`): Always returns the new secret
+
+The **GET** endpoint (`GET /api/notifications/preferences`) does **NOT** include the webhook secret in the response. This prevents accidental exposure through normal API usage. The secret is stored securely in the database and used internally for signing webhooks.
+
 ### Get Notification Preferences
 ```http
 GET /api/notifications/preferences?userId=GXXXXXXX...
