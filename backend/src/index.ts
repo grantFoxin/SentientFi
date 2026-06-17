@@ -235,6 +235,15 @@ server.listen(port, async () => {
     console.log(`🚀 Server running on port ${port}`)
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
     console.log(`CoinGecko API Key: ${!!process.env.COINGECKO_API_KEY ? 'SET' : 'NOT SET'}`)
+    
+    // Warn if ADMIN_PUBLIC_KEYS is not set
+    if (!process.env.ADMIN_PUBLIC_KEYS) {
+        logger.warn(
+            '⚠️  ADMIN_PUBLIC_KEYS is not set — admin routes (/api/auto-rebalancer/*, ' +
+            '/api/rebalance/history/sync-onchain) will return 503. ' +
+            'Set ADMIN_PUBLIC_KEYS in .env to enable admin functionality.'
+        )
+    }
 
     // ── BullMQ / Redis setup ────────────────────────────────────────────────
     const redisAvailable = await isRedisAvailable()
