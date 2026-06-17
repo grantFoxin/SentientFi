@@ -16,7 +16,6 @@ import { writeRateLimiter } from '../middleware/rateLimit.js'
 import { getQueueMetrics } from '../queue/queueMetrics.js'
 import { blockDebugInProduction } from '../middleware/debugGate.js'
 import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
-import { autoRebalancer } from '../index.js'
 
 const stellarService = new StellarService()
 const reflectorService = new ReflectorService()
@@ -27,6 +26,14 @@ const featureFlags = getFeatureFlags()
 const publicFeatureFlags = getPublicFeatureFlags()
 
 const router = Router()
+
+let autoRebalancer: any = null
+try {
+    const { AutoRebalancerService } = await import('../services/autoRebalancer.js')
+    autoRebalancer = new AutoRebalancerService()
+} catch {
+    // autoRebalancer not available in test environment
+}
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) return error.message;
