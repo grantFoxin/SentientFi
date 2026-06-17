@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import express, { Express } from 'express'
 import cors from 'cors'
 import request from 'supertest'
+import { Keypair } from '@stellar/stellar-sdk'
 import { portfolioRouter } from '../api/routes.js'
 import { mkdirSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -351,6 +352,58 @@ describe.skip('Portfolio Management - GET /api/user/:address/portfolios', () => 
 
         expect(Array.isArray(response.body)).toBe(true)
         expect(response.body).toBeDefined()
+    })
+})
+
+// ─── Notification userId Validation Tests ────────────────────────────────────
+
+describe('Notifications - userId must be a valid Stellar public key', () => {
+    const validUserId = Keypair.random().publicKey()
+    const invalidUserId = 'not-a-stellar-address'
+
+    it('POST /api/notifications/subscribe rejects an invalid userId with 400', async () => {
+        const response = await request(app)
+            .post('/api/notifications/subscribe')
+            .send({
+                userId: invalidUserId,
+                emailEnabled: true,
+                emailAddress: 'user@example.com',
+                webhookEnabled: false,
+                events: { rebalance: true, circuitBreaker: true, priceMovement: true, riskChange: true }
+            })
+            .expect(400)
+
+        expect(response.body.success).toBe(false)
+        expect(response.body.error).toMatch(/valid Stellar public key/i)
+    })
+
+    it('GET /api/notifications/preferences rejects an invalid userId with 400', async () => {
+        const response = await request(app)
+            .get('/api/notifications/preferences')
+            .query({ userId: invalidUserId })
+            .expect(400)
+
+        expect(response.body.success).toBe(false)
+        expect(response.body.error).toMatch(/valid Stellar public key/i)
+    })
+
+    it('DELETE /api/notifications/unsubscribe rejects an invalid userId with 400', async () => {
+        const response = await request(app)
+            .delete('/api/notifications/unsubscribe')
+            .query({ userId: invalidUserId })
+            .expect(400)
+
+        expect(response.body.success).toBe(false)
+        expect(response.body.error).toMatch(/valid Stellar public key/i)
+    })
+
+    it('GET /api/notifications/preferences accepts a valid Stellar public key', async () => {
+        const response = await request(app)
+            .get('/api/notifications/preferences')
+            .query({ userId: validUserId })
+            .expect(200)
+
+        expect(response.body.success).toBe(true)
     })
 })
 

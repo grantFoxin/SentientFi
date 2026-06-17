@@ -11,6 +11,13 @@ export function isValidStellarPublicKey(value: unknown): value is string {
 }
 
 // Reusable schema for a Stellar public key used as a userId/address.
+// NOTE: This is the Zod wrapper around the same `isValidStellarPublicKey` check.
+// The notification routes intentionally call the helper directly (matching the
+// manual field validation used by the other handlers in routes.ts) rather than
+// parsing through this schema. Both paths share identical validation logic — the
+// only difference is error shape (ZodError vs. the manual 400 JSON response) — so
+// there is no risk of the two diverging. Use this schema where a Zod pipeline is
+// already in play; use the helper for manual checks.
 export const stellarAddressSchema = z
     .string()
     .refine(isValidStellarPublicKey, {
