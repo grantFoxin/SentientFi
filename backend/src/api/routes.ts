@@ -1,7 +1,9 @@
 
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { StellarService } from '../services/stellar.js'
 import { ReflectorService } from '../services/reflector.js'
+import { RebalanceHistoryService } from '../services/rebalanceHistory.js'
+import { RiskManagementService } from '../services/riskManagements.js'
 import { portfolioStorage } from '../services/portfolioStorage.js'
 import { CircuitBreakers } from '../services/circuitBreakers.js'
 import { analyticsService } from '../services/analyticsService.js'
@@ -11,53 +13,45 @@ import { logger } from '../utils/logger.js'
 import { idempotencyMiddleware } from '../middleware/idempotency.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { writeRateLimiter } from '../middleware/rateLimit.js'
-import { blockDebugInProduction } from '../middleware/debugGate.js'
-import { riskManagementService, rebalanceHistoryService } from '../services/serviceContainer.js'
-import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
 import { getQueueMetrics } from '../queue/queueMetrics.js'
-
-const router = Router()
+import { blockDebugInProduction } from '../middleware/debugGate.js'
+import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
+import { autoRebalancer } from '../index.js'
 
 const stellarService = new StellarService()
 const reflectorService = new ReflectorService()
+const rebalanceHistoryService = new RebalanceHistoryService()
+const riskManagementService = new RiskManagementService()
+
 const featureFlags = getFeatureFlags()
 const publicFeatureFlags = getPublicFeatureFlags()
 
-function getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
+const router = Router()
+
+const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    return String(error);
 }
 
-function getErrorObject(error: unknown): { message: string; stack?: string } {
-    if (error instanceof Error) {
-        return { message: error.message, stack: error.stack }
-    }
-    return { message: String(error) }
+const getErrorObject = (error: unknown): Error => {
+    if (error instanceof Error) return error;
+    return new Error(String(error));
 }
 
-function parseOptionalBoolean(value: unknown): boolean | undefined {
-    if (value === undefined || value === null || value === '') return undefined
-    const str = String(value).toLowerCase()
-    if (str === 'true' || str === '1') return true
-    if (str === 'false' || str === '0') return false
-    return undefined
+const parseOptionalBoolean = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return undefined;
 }
 
 function getPortfolioAllocationsAsRecord(portfolio: any): Record<string, number> {
-    if (!portfolio || !portfolio.allocations) return {}
-    if (typeof portfolio.allocations === 'string') {
-        return JSON.parse(portfolio.allocations)
+    if (!portfolio || !portfolio.targetAllocations) return {};
+    if (portfolio.targetAllocations instanceof Map) {
+        return Object.fromEntries(portfolio.targetAllocations);
     }
-    return portfolio.allocations
+    return portfolio.targetAllocations;
 }
-
-let autoRebalancer: any = null
-try {
-    const { AutoRebalancerService } = await import('../services/autoRebalancer.js')
-    autoRebalancer = new AutoRebalancerService()
-} catch {
-    // autoRebalancer not available
-}
-
 const parseOptionalTimestamp = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === '') return undefined
     if (typeof value !== 'string') return undefined
@@ -686,7 +680,7 @@ router.post('/notifications/subscribe', writeRateLimiter, idempotencyMiddleware,
         }
 
         // Subscribe user
-        const result = notificationService.subscribe({
+        notificationService.subscribe({
             userId,
             emailEnabled,
             emailAddress,
@@ -697,18 +691,11 @@ router.post('/notifications/subscribe', writeRateLimiter, idempotencyMiddleware,
 
         logger.info('User subscribed to notifications', { userId, emailEnabled, webhookEnabled })
 
-        const response: any = {
+        res.json({
             success: true,
             message: 'Notification preferences saved successfully',
             timestamp: new Date().toISOString()
-        }
-
-        // Include webhook secret if newly generated
-        if (result.webhookSecret) {
-            response.webhookSecret = result.webhookSecret
-        }
-
-        res.json(response)
+        })
     } catch (error) {
         logger.error('Failed to subscribe to notifications', { error: getErrorObject(error) })
         res.status(500).json({
@@ -777,35 +764,6 @@ router.delete('/notifications/unsubscribe', async (req, res) => {
         })
     } catch (error) {
         logger.error('Failed to unsubscribe from notifications', { error: getErrorObject(error) })
-        res.status(500).json({
-            success: false,
-            error: getErrorMessage(error)
-        })
-    }
-})
-
-// Rotate webhook secret
-router.post('/notifications/rotate-webhook-secret', async (req, res) => {
-    try {
-        const { userId } = req.body
-
-        if (!userId) {
-            return res.status(400).json({
-                success: false,
-                error: 'userId is required'
-            })
-        }
-
-        const newSecret = await notificationService.rotateWebhookSecret(userId)
-
-        res.json({
-            success: true,
-            webhookSecret: newSecret,
-            message: 'Webhook secret rotated successfully. Store this secret securely - it will not be shown again.',
-            timestamp: new Date().toISOString()
-        })
-    } catch (error) {
-        logger.error('Failed to rotate webhook secret', { error: getErrorObject(error) })
         res.status(500).json({
             success: false,
             error: getErrorMessage(error)
