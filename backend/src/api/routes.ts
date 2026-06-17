@@ -640,7 +640,7 @@ router.post('/notifications/subscribe', writeRateLimiter, idempotencyMiddleware,
         }
 
         // Subscribe user
-        notificationService.subscribe({
+        const result = notificationService.subscribe({
             userId,
             emailEnabled,
             emailAddress,
@@ -651,11 +651,18 @@ router.post('/notifications/subscribe', writeRateLimiter, idempotencyMiddleware,
 
         logger.info('User subscribed to notifications', { userId, emailEnabled, webhookEnabled })
 
-        res.json({
+        const response: any = {
             success: true,
             message: 'Notification preferences saved successfully',
             timestamp: new Date().toISOString()
-        })
+        }
+
+        // Include webhook secret if newly generated
+        if (result.webhookSecret) {
+            response.webhookSecret = result.webhookSecret
+        }
+
+        res.json(response)
     } catch (error) {
         logger.error('Failed to subscribe to notifications', { error: getErrorObject(error) })
         res.status(500).json({
@@ -724,6 +731,35 @@ router.delete('/notifications/unsubscribe', async (req, res) => {
         })
     } catch (error) {
         logger.error('Failed to unsubscribe from notifications', { error: getErrorObject(error) })
+        res.status(500).json({
+            success: false,
+            error: getErrorMessage(error)
+        })
+    }
+})
+
+// Rotate webhook secret
+router.post('/notifications/rotate-webhook-secret', async (req, res) => {
+    try {
+        const { userId } = req.body
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId is required'
+            })
+        }
+
+        const newSecret = await notificationService.rotateWebhookSecret(userId)
+
+        res.json({
+            success: true,
+            webhookSecret: newSecret,
+            message: 'Webhook secret rotated successfully. Store this secret securely - it will not be shown again.',
+            timestamp: new Date().toISOString()
+        })
+    } catch (error) {
+        logger.error('Failed to rotate webhook secret', { error: getErrorObject(error) })
         res.status(500).json({
             success: false,
             error: getErrorMessage(error)
