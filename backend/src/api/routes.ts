@@ -1,5 +1,5 @@
 
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { StellarService } from '../services/stellar.js'
 import { ReflectorService } from '../services/reflector.js'
 import { RebalanceHistoryService } from '../services/rebalanceHistory.js'
@@ -11,7 +11,47 @@ import { notificationService } from '../services/notificationService.js'
 import { contractEventIndexerService } from '../services/contractEventIndexer.js'
 import { logger } from '../utils/logger.js'
 import { idempotencyMiddleware } from '../middleware/idempotency.js'
+import { requireAdmin } from '../middleware/auth.js'
+import { writeRateLimiter } from '../middleware/rateLimit.js'
+import { getQueueMetrics } from '../queue/queueMetrics.js'
+import { blockDebugInProduction } from '../middleware/debugGate.js'
+import { getFeatureFlags, getPublicFeatureFlags } from '../config/featureFlags.js'
+import { autoRebalancer } from '../index.js'
 
+const stellarService = new StellarService()
+const reflectorService = new ReflectorService()
+const rebalanceHistoryService = new RebalanceHistoryService()
+const riskManagementService = new RiskManagementService()
+
+const featureFlags = getFeatureFlags()
+const publicFeatureFlags = getPublicFeatureFlags()
+
+const router = Router()
+
+const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    return String(error);
+}
+
+const getErrorObject = (error: unknown): Error => {
+    if (error instanceof Error) return error;
+    return new Error(String(error));
+}
+
+const parseOptionalBoolean = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return undefined;
+}
+
+function getPortfolioAllocationsAsRecord(portfolio: any): Record<string, number> {
+    if (!portfolio || !portfolio.targetAllocations) return {};
+    if (portfolio.targetAllocations instanceof Map) {
+        return Object.fromEntries(portfolio.targetAllocations);
+    }
+    return portfolio.targetAllocations;
+}
 const parseOptionalTimestamp = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === '') return undefined
     if (typeof value !== 'string') return undefined
@@ -48,7 +88,7 @@ router.get('/rebalance/history', async (req, res) => {
             portfolioId || undefined,
             limit,
             {
-                eventSource: source,
+                eventSource: source === 'all' ? undefined : source,
                 startTimestamp,
                 endTimestamp
             }
