@@ -66,14 +66,14 @@ impl PortfolioRebalancer {
             .unwrap()
     }
 
-    pub fn deposit(env: Env, portfolio_id: u64, asset: Address, amount: i128) {
+    pub fn deposit(env: Env, portfolio_id: u64, asset: Address, amount: i128) -> Result<(), Error> {
         if amount <= 0 {
-            panic!("Amount must be positive");
+            return Err(Error::InvalidAmount);
         }
         
         // Check for emergency stop
         if let Some(true) = env.storage().instance().get(&DataKey::EmergencyStop) {
-            panic!("Emergency stop active");
+            return Err(Error::EmergencyStop);
         }
 
         let mut portfolio: Portfolio = env.storage().persistent()
@@ -97,6 +97,7 @@ impl PortfolioRebalancer {
             ("portfolio", "deposit"),
             (portfolio_id, asset, amount)
         );
+        Ok(())
     }
 
     pub fn check_rebalance_needed(env: Env, portfolio_id: u64) -> bool {
@@ -136,10 +137,10 @@ impl PortfolioRebalancer {
         false
     }
 
-    pub fn execute_rebalance(env: Env, portfolio_id: u64) {
+    pub fn execute_rebalance(env: Env, portfolio_id: u64) -> Result<(), Error> {
         // Check for emergency stop
         if let Some(true) = env.storage().instance().get(&DataKey::EmergencyStop) {
-             panic!("Emergency stop active");
+             return Err(Error::EmergencyStop);
         }
 
         let mut portfolio: Portfolio = env.storage().persistent()
@@ -151,7 +152,7 @@ impl PortfolioRebalancer {
         // Check cooldown (e.g., 1 hour = 3600 seconds)
         let current_time = env.ledger().timestamp();
         if current_time < portfolio.last_rebalance + 3600 {
-            panic!("Cooldown active");
+            return Err(Error::CooldownActive);
         }
         
         // Reflector check for stale data
@@ -162,7 +163,7 @@ impl PortfolioRebalancer {
         for (asset, _) in portfolio.target_allocations.iter() {
             if let Some(price_data) = reflector_client.lastprice(&crate::reflector::Asset::Stellar(asset.clone())) {
                 if price_data.is_stale(current_time, 3600) {
-                     panic!("Stale price data");
+                     return Err(Error::StaleData);
                 }
             } else {
                 // If price is missing, we can't safely rebalance
@@ -179,6 +180,7 @@ impl PortfolioRebalancer {
             ("portfolio", "rebalanced"),
             (portfolio_id, current_time)
         );
+        Ok(())
     }
 
     pub fn set_emergency_stop(env: Env, stop: bool) {

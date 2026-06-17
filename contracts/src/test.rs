@@ -99,7 +99,6 @@ fn test_deposit_valid() {
 }
 
 #[test]
-#[should_panic(expected = "Amount must be positive")]
 fn test_deposit_invalid_amount() {
     let env = Env::default();
     env.mock_all_auths();
@@ -116,7 +115,8 @@ fn test_deposit_invalid_amount() {
     allocations.set(asset.clone(), 100);
     let pid = client.create_portfolio(&user, &allocations, &5);
 
-    client.deposit(&pid, &asset, &0);
+    let result = client.try_deposit(&pid, &asset, &0);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
 }
 
 #[test]
@@ -222,7 +222,6 @@ fn test_execute_rebalance_success() {
 }
 
 #[test]
-#[should_panic(expected = "Cooldown active")]
 fn test_execute_rebalance_cooldown() {
     let env = Env::default();
     env.mock_all_auths();
@@ -249,11 +248,11 @@ fn test_execute_rebalance_cooldown() {
         li.timestamp = 10010;
     });
     
-    client.execute_rebalance(&pid);
+    let result = client.try_execute_rebalance(&pid);
+    assert_eq!(result, Err(Ok(Error::CooldownActive)));
 }
 
 #[test]
-#[should_panic(expected = "Emergency stop active")]
 fn test_emergency_stop() {
     let env = Env::default();
     env.mock_all_auths();
@@ -271,15 +270,13 @@ fn test_emergency_stop() {
     let asset = Address::generate(&env);
     allocations.set(asset.clone(), 100);
     
-    // Try deposit (should panic)
-    // Note: creating portfolio might work depending on implementation, 
-    // but deposit/rebalance should fail. Validating deposit fail here.
+    // Try deposit (should return error)
     let pid = client.create_portfolio(&user, &allocations, &5);
-    client.deposit(&pid, &asset, &100);
+    let result = client.try_deposit(&pid, &asset, &100);
+    assert_eq!(result, Err(Ok(Error::EmergencyStop)));
 }
 
 #[test]
-#[should_panic(expected = "Stale price data")]
 fn test_stale_data() {
     let env = Env::default();
     env.mock_all_auths();
@@ -342,7 +339,8 @@ fn test_stale_data() {
         li.timestamp = 20000;
     });
 
-    client.execute_rebalance(&pid);
+    let result = client.try_execute_rebalance(&pid);
+    assert_eq!(result, Err(Ok(Error::StaleData)));
 }
 
 #[test]
