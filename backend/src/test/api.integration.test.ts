@@ -4,6 +4,8 @@ import cors from 'cors'
 import request from 'supertest'
 import { Keypair } from '@stellar/stellar-sdk'
 import { portfolioRouter } from '../api/routes.js'
+import { v1Router } from '../api/v1Router.js'
+import { legacyApiDeprecation } from '../middleware/legacyApiDeprecation.js'
 import { mkdirSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -41,7 +43,9 @@ beforeAll(async () => {
 
     app.set('trust proxy', 1)
 
-    app.use('/api', portfolioRouter)
+    // Mount v1 (canonical) and legacy API routes
+    app.use('/api/v1', v1Router)
+    app.use('/api', legacyApiDeprecation, portfolioRouter)
 
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
         console.error('API Error:', err)
@@ -407,3 +411,55 @@ describe('Notifications - userId must be a valid Stellar public key', () => {
     })
 })
 
+// ─── v1 API Namespace Tests ─────────────────────────────────────────────────
+
+describe('API Namespace - /api/v1 (canonical) vs /api (legacy)', () => {
+    it('GET /api/v1/prices returns 200 (canonical namespace)', async () => {
+        const response = await request(app)
+            .get('/api/v1/prices')
+            .expect(200)
+
+        expect(Object.keys(response.body).length).toBeGreaterThan(0)
+    })
+
+    it('GET /api/prices returns 200 with deprecation headers (legacy namespace)', async () => {
+        const response = await request(app)
+            .get('/api/prices')
+            .expect(200)
+
+        // Check for deprecation headers
+        expect(response.headers['deprecation']).toBe('true')
+        expect(response.headers['sunset']).toBeDefined()
+        expect(response.headers['link']).toContain('deprecation')
+
+        // Data should still work
+        expect(Object.keys(response.body).length).toBeGreaterThan(0)
+    })
+
+    it('/api/v1/* and /api/* return same data structure', async () => {
+        const v1Response = await request(app)
+            .get('/api/v1/prices')
+            .expect(200)
+
+        const legacyResponse = await request(app)
+            .get('/api/prices')
+            .expect(200)
+
+        // Both should return price data with same structure
+        expect(Object.keys(v1Response.body).length).toBeGreaterThan(0)
+        expect(Object.keys(legacyResponse.body).length).toBeGreaterThan(0)
+
+        // Structure should match
+        const v1Keys = Object.keys(v1Response.body).sort()
+        const legacyKeys = Object.keys(legacyResponse.body).sort()
+        expect(v1Keys).toEqual(legacyKeys)
+    })
+
+    it('root-level routes are not exposed (no /prices without prefix)', async () => {
+        const response = await request(app)
+            .get('/prices')
+            .expect((res) => {
+                expect(res.status).toBe(404)
+            })
+    })
+})

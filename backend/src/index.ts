@@ -4,7 +4,9 @@ import cors from 'cors'
 import { createServer } from 'node:http'
 import { WebSocketServer } from 'ws'
 import { portfolioRouter } from './api/routes.js'
+import { v1Router } from './api/v1Router.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
+import { legacyApiDeprecation } from './middleware/legacyApiDeprecation.js'
 import { globalRateLimiter } from './middleware/rateLimit.js'
 import { RebalancingService } from './monitoring/rebalancer.js'
 import { AutoRebalancerService } from './services/autoRebalancer.js'
@@ -174,8 +176,11 @@ app.get('/', (req, res) => {
 })
 
 // Mount API routes
-app.use('/api', portfolioRouter)
-app.use('/', portfolioRouter)
+// Canonical v1 namespace
+app.use('/api/v1', v1Router)
+
+// Legacy namespace with deprecation headers
+app.use('/api', legacyApiDeprecation, portfolioRouter)
 
 // 404 handler
 app.use((req, res) => {
