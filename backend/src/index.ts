@@ -182,9 +182,6 @@ app.use('/api/v1', v1Router)
 // Legacy namespace with deprecation headers
 app.use('/api', legacyApiDeprecation, portfolioRouter)
 
-// Root namespace (kept for backward compatibility)
-app.use('/', portfolioRouter)
-
 // 404 handler
 app.use((req, res) => {
     console.log(`404 - Route not found: ${req.method} ${req.url}`)
