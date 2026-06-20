@@ -1,3 +1,4 @@
+import { WebSocketServer } from 'ws'
 import { StellarService } from './stellar.js'
 import { ReflectorService } from './reflector.js'
 import { rebalanceHistoryService } from './serviceContainer.js'
