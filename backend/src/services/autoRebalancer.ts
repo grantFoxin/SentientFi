@@ -26,6 +26,7 @@ export class AutoRebalancerService {
     }
 
     setWss(wss: WebSocketServer): void {
+        this.wss = wss
     }
 
     /**
