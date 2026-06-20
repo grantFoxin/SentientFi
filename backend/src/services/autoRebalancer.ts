@@ -33,6 +33,10 @@ export class AutoRebalancerService {
         this.wss = wss
     }
 
+    hasWss(): boolean {
+        return this.wss !== null
+    }
+
     /**
      * Start the automatic monitoring service.
      * With BullMQ, this just flags the service as running – the scheduler
