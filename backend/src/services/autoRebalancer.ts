@@ -165,5 +165,6 @@ export class AutoRebalancerService {
         this.wss.clients.forEach(client => {
             if (client.readyState === 1) client.send(message)
         })
+        logger.info(`[AUTO-REBALANCER] Notification sent: ${event} for portfolio ${portfolioId}`)
     }
 }
