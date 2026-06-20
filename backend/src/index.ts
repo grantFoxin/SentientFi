@@ -223,7 +223,7 @@ wss.on('connection', (ws) => {
     })
 })
 
-// Wire wss into autoRebalancer so it can broadcast portfolio events to clients
+// Wire wss into autoRebalancer so it can push real-time portfolio events to clients
 autoRebalancer.setWss(wss)
 
 // Start server
