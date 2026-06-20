@@ -155,5 +155,12 @@ export class AutoRebalancerService {
 
     notifyClients(portfolioId: string, event: string, data: any = {}): void {
         if (!this.wss) return
+        const message = JSON.stringify({
+            type: 'portfolio_update',
+            portfolioId,
+            event,
+            data,
+            timestamp: new Date().toISOString(),
+        })
     }
 }
