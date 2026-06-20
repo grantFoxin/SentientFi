@@ -225,7 +225,6 @@ wss.on('connection', (ws) => {
     })
 })
 
-    console.log('[REBALANCING-SERVICE] Monitoring service started (queue-backed)')
 } catch (error) {
     console.error('Failed to start rebalancing service:', error)
 }
