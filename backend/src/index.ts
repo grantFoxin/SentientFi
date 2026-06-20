@@ -223,7 +223,6 @@ wss.on('connection', (ws) => {
     })
 })
 
-    console.error('Failed to start rebalancing service:', error)
 }
 
 // Start server
