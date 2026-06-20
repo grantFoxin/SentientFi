@@ -223,8 +223,6 @@ wss.on('connection', (ws) => {
     })
 })
 
-}
-
 // Start server
 server.listen(port, async () => {
     console.log(`🚀 Server running on port ${port}`)
