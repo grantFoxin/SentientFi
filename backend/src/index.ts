@@ -25,7 +25,6 @@ let startupConfig: StartupConfig
 try {
     startupConfig = validateStartupConfigOrThrow(process.env)
     logger.info('[STARTUP-CONFIG] Validation successful', buildStartupSummary(startupConfig))
-} catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(message)
     process.exit(1)
@@ -141,8 +140,7 @@ app.get('/test/coingecko', async (req, res) => {
             testResult,
             environment: process.env.NODE_ENV
         })
-    } catch (error) {
-        res.status(500).json({
+            res.status(500).json({
             success: false,
             error: error instanceof Error ? error.message : String(error),
             hasApiKey: !!process.env.COINGECKO_API_KEY
@@ -225,7 +223,6 @@ wss.on('connection', (ws) => {
     })
 })
 
-} catch (error) {
     console.error('Failed to start rebalancing service:', error)
 }
 
@@ -284,8 +281,7 @@ server.listen(port, async () => {
                     }))
                 }
             })
-        } catch (error) {
-            console.error('[AUTO-REBALANCER] ❌ Failed to start automatic rebalancing service:', error)
+                    console.error('[AUTO-REBALANCER] ❌ Failed to start automatic rebalancing service:', error)
         }
     } else {
         console.log('[AUTO-REBALANCER] Automatic rebalancing disabled in development mode')
@@ -295,8 +291,7 @@ server.listen(port, async () => {
     // Contract event indexer (on-chain source-of-truth history)
     try {
         await contractEventIndexerService.start()
-    } catch (error) {
-        console.error('[CHAIN-INDEXER] Failed to start:', error)
+            console.error('[CHAIN-INDEXER] Failed to start:', error)
     }
 
     console.log('Available endpoints:')
@@ -315,8 +310,7 @@ const gracefulShutdown = async (signal: string) => {
     try {
         autoRebalancer.stop()
         console.log('[SHUTDOWN] Auto-rebalancer stopped')
-    } catch (error) {
-        console.error('[SHUTDOWN] Error stopping auto-rebalancer:', error)
+            console.error('[SHUTDOWN] Error stopping auto-rebalancer:', error)
     }
 
     // Stop BullMQ workers
@@ -327,31 +321,27 @@ const gracefulShutdown = async (signal: string) => {
             stopAnalyticsSnapshotWorker(),
         ])
         console.log('[SHUTDOWN] BullMQ workers stopped')
-    } catch (error) {
-        console.error('[SHUTDOWN] Error stopping BullMQ workers:', error)
+            console.error('[SHUTDOWN] Error stopping BullMQ workers:', error)
     }
 
     // Close BullMQ queues
     try {
         await closeAllQueues()
         console.log('[SHUTDOWN] BullMQ queues closed')
-    } catch (error) {
-        console.error('[SHUTDOWN] Error closing queues:', error)
+            console.error('[SHUTDOWN] Error closing queues:', error)
     }
 
     // Close database connection
     try {
         await contractEventIndexerService.stop()
         console.log('[SHUTDOWN] Contract event indexer stopped')
-    } catch (error) {
-        console.error('[SHUTDOWN] Error stopping contract event indexer:', error)
+            console.error('[SHUTDOWN] Error stopping contract event indexer:', error)
     }
 
     try {
         databaseService.close()
         console.log('[SHUTDOWN] Database connection closed')
-    } catch (error) {
-        console.error('[SHUTDOWN] Error closing database:', error)
+            console.error('[SHUTDOWN] Error closing database:', error)
     }
 
     // Close WebSocket connections
