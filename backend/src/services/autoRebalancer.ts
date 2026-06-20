@@ -153,6 +153,9 @@ export class AutoRebalancerService {
 
     // ─── WebSocket broadcasting (migrated from legacy RebalancingService) ────
 
+    /**
+     * Push a portfolio-specific event to all connected WebSocket clients.
+     */
     notifyClients(portfolioId: string, event: string, data: any = {}): void {
         if (!this.wss) return
         const message = JSON.stringify({
