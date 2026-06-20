@@ -33,6 +33,7 @@ export class AutoRebalancerService {
         this.wss = wss
     }
 
+    /** Returns true if a WebSocket server has been wired in via setWss(). */
     hasWss(): boolean {
         return this.wss !== null
     }
