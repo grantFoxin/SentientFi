@@ -150,4 +150,6 @@ export class AutoRebalancerService {
             }
         }
     }
+
+    // ─── WebSocket broadcasting (migrated from legacy RebalancingService) ────
 }
