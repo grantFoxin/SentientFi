@@ -223,6 +223,9 @@ wss.on('connection', (ws) => {
     })
 })
 
+// Wire wss into autoRebalancer so it can broadcast portfolio events to clients
+autoRebalancer.setWss(wss)
+
 // Start server
 server.listen(port, async () => {
     console.log(`🚀 Server running on port ${port}`)
