@@ -25,6 +25,9 @@ export class AutoRebalancerService {
         this.reflectorService = new ReflectorService()
     }
 
+    setWss(wss: WebSocketServer): void {
+    }
+
     /**
      * Start the automatic monitoring service.
      * With BullMQ, this just flags the service as running – the scheduler
