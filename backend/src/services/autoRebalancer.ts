@@ -13,6 +13,7 @@ export class AutoRebalancerService {
     private stellarService: StellarService
     private reflectorService: ReflectorService
     private isRunning = false
+    private wss: WebSocketServer | null = null
 
     // Configuration (kept for getStatus() compatibility)
     private readonly CHECK_INTERVAL = 30 * 60 * 1000        // 30 minutes
