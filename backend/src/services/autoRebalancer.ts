@@ -25,6 +25,10 @@ export class AutoRebalancerService {
         this.reflectorService = new ReflectorService()
     }
 
+    /**
+     * Wire up the WebSocket server so this service can push portfolio events
+     * to connected clients. Called once from index.ts after wss is created.
+     */
     setWss(wss: WebSocketServer): void {
         this.wss = wss
     }
