@@ -168,6 +168,9 @@ export class AutoRebalancerService {
         logger.info(`[AUTO-REBALANCER] Notification sent: ${event} for portfolio ${portfolioId}`)
     }
 
+    /**
+     * Broadcast a market-level event to all connected WebSocket clients.
+     */
     broadcastToAllClients(event: string, data: any = {}): void {
         if (!this.wss) return
         const message = JSON.stringify({
