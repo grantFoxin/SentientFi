@@ -170,5 +170,11 @@ export class AutoRebalancerService {
 
     broadcastToAllClients(event: string, data: any = {}): void {
         if (!this.wss) return
+        const message = JSON.stringify({
+            type: 'market_update',
+            event,
+            data,
+            timestamp: new Date().toISOString(),
+        })
     }
 }
