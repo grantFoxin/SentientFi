@@ -224,6 +224,7 @@ wss.on('connection', (ws) => {
 })
 
 // Wire wss into autoRebalancer so it can push real-time portfolio events to clients
+// Must be called after the WebSocketServer is constructed above
 autoRebalancer.setWss(wss)
 
 // Start server
