@@ -167,4 +167,8 @@ export class AutoRebalancerService {
         })
         logger.info(`[AUTO-REBALANCER] Notification sent: ${event} for portfolio ${portfolioId}`)
     }
+
+    broadcastToAllClients(event: string, data: any = {}): void {
+        if (!this.wss) return
+    }
 }
