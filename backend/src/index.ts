@@ -225,7 +225,6 @@ wss.on('connection', (ws) => {
     })
 })
 
-// Start existing rebalancing service (now queue-backed, no cron)
 try {
     const rebalancingService = new RebalancingService(wss)
     rebalancingService.start()
