@@ -1,3 +1,4 @@
+import { WebSocketServer } from 'ws'
 import { StellarService } from './stellar.js'
 import { ReflectorService } from './reflector.js'
 import { rebalanceHistoryService } from './serviceContainer.js'
@@ -12,6 +13,7 @@ export class AutoRebalancerService {
     private stellarService: StellarService
     private reflectorService: ReflectorService
     private isRunning = false
+    private wss: WebSocketServer | null = null
 
     // Configuration (kept for getStatus() compatibility)
     private readonly CHECK_INTERVAL = 30 * 60 * 1000        // 30 minutes
@@ -135,5 +137,57 @@ export class AutoRebalancerService {
                 averageRebalancesPerDay: 0,
             }
         }
+    }
+
+    /**
+     * Inject the WebSocket server so portfolio events can be pushed to clients.
+     * Called from index.ts once wss is available.
+     */
+    setWss(wss: WebSocketServer): void {
+        this.wss = wss
+    }
+
+    /**
+     * Returns true once setWss() has been called.
+     */
+    hasWss(): boolean {
+        return this.wss !== null
+    }
+
+    // ─── WebSocket broadcasting ──────────────────────────────────────────────
+
+    /**
+     * Push a portfolio-specific event to all connected WebSocket clients.
+     */
+    notifyClients(portfolioId: string, event: string, data: Record<string, unknown> = {}): void {
+        if (!this.wss) return
+        const message = JSON.stringify({
+            type: 'portfolio_update',
+            portfolioId,
+            event,
+            data,
+            timestamp: new Date().toISOString(),
+        })
+        this.wss.clients.forEach(client => {
+            if (client.readyState === 1) client.send(message)
+        })
+        logger.info(`[AUTO-REBALANCER] Pushed "${event}" event to WebSocket clients`, { portfolioId })
+    }
+
+    /**
+     * Broadcast a market-wide event to all connected WebSocket clients.
+     */
+    broadcastToAllClients(event: string, data: Record<string, unknown> = {}): void {
+        if (!this.wss) return
+        const message = JSON.stringify({
+            type: 'market_update',
+            event,
+            data,
+            timestamp: new Date().toISOString(),
+        })
+        this.wss.clients.forEach(client => {
+            if (client.readyState === 1) client.send(message)
+        })
+        logger.info(`[AUTO-REBALANCER] Broadcast "${event}" to all WebSocket clients`)
     }
 }

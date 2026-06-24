@@ -8,7 +8,6 @@ import { v1Router } from './api/v1Router.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
 import { legacyApiDeprecation } from './middleware/legacyApiDeprecation.js'
 import { globalRateLimiter } from './middleware/rateLimit.js'
-import { RebalancingService } from './monitoring/rebalancer.js'
 import { AutoRebalancerService } from './services/autoRebalancer.js'
 import { logger } from './utils/logger.js'
 import { databaseService } from './services/databaseService.js'
@@ -226,14 +225,8 @@ wss.on('connection', (ws) => {
     })
 })
 
-// Start existing rebalancing service (now queue-backed, no cron)
-try {
-    const rebalancingService = new RebalancingService(wss)
-    rebalancingService.start()
-    console.log('[REBALANCING-SERVICE] Monitoring service started (queue-backed)')
-} catch (error) {
-    console.error('Failed to start rebalancing service:', error)
-}
+// Wire wss into autoRebalancer so it can push real-time portfolio events to clients
+autoRebalancer.setWss(wss)
 
 // Start server
 server.listen(port, async () => {
