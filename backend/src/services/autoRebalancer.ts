@@ -26,19 +26,6 @@ export class AutoRebalancerService {
     }
 
     /**
-     * Wire up the WebSocket server so this service can push portfolio events
-     * to connected clients. Called once from index.ts after wss is created.
-     */
-    setWss(wss: WebSocketServer): void {
-        this.wss = wss
-    }
-
-    /** Returns true if a WebSocket server has been wired in via setWss(). */
-    hasWss(): boolean {
-        return this.wss !== null
-    }
-
-    /**
      * Start the automatic monitoring service.
      * With BullMQ, this just flags the service as running – the scheduler
      * already registered the repeatable job. We also enqueue an immediate
@@ -152,12 +139,27 @@ export class AutoRebalancerService {
         }
     }
 
-    // ─── WebSocket broadcasting (migrated from legacy RebalancingService) ────
+    /**
+     * Inject the WebSocket server so portfolio events can be pushed to clients.
+     * Called from index.ts once wss is available.
+     */
+    setWss(wss: WebSocketServer): void {
+        this.wss = wss
+    }
+
+    /**
+     * Returns true once setWss() has been called.
+     */
+    hasWss(): boolean {
+        return this.wss !== null
+    }
+
+    // ─── WebSocket broadcasting ──────────────────────────────────────────────
 
     /**
      * Push a portfolio-specific event to all connected WebSocket clients.
      */
-    notifyClients(portfolioId: string, event: string, data: any = {}): void {
+    notifyClients(portfolioId: string, event: string, data: Record<string, unknown> = {}): void {
         if (!this.wss) return
         const message = JSON.stringify({
             type: 'portfolio_update',
@@ -169,13 +171,13 @@ export class AutoRebalancerService {
         this.wss.clients.forEach(client => {
             if (client.readyState === 1) client.send(message)
         })
-        logger.info(`[AUTO-REBALANCER] Notification sent: ${event} for portfolio ${portfolioId}`)
+        logger.info(`[AUTO-REBALANCER] Pushed "${event}" event to WebSocket clients`, { portfolioId })
     }
 
     /**
-     * Broadcast a market-level event to all connected WebSocket clients.
+     * Broadcast a market-wide event to all connected WebSocket clients.
      */
-    broadcastToAllClients(event: string, data: any = {}): void {
+    broadcastToAllClients(event: string, data: Record<string, unknown> = {}): void {
         if (!this.wss) return
         const message = JSON.stringify({
             type: 'market_update',
@@ -186,6 +188,6 @@ export class AutoRebalancerService {
         this.wss.clients.forEach(client => {
             if (client.readyState === 1) client.send(message)
         })
-        logger.info(`[AUTO-REBALANCER] Market broadcast sent: ${event}`)
+        logger.info(`[AUTO-REBALANCER] Broadcast "${event}" to all WebSocket clients`)
     }
 }
