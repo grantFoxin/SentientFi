@@ -1,7 +1,21 @@
-import { SorobanRpc } from '@stellar/stellar-sdk'
+import {
+    SorobanRpc,
+    Contract,
+    TransactionBuilder,
+    Networks,
+    Account,
+    scValToNative,
+    xdr
+} from '@stellar/stellar-sdk'
 import type { PricesMap, PriceData } from '../types/index.js'
 import { getFeatureFlags } from '../config/featureFlags.js'
-import { logger } from '../utils/logger.js' // Added logger import
+import { logger } from '../utils/logger.js'
+
+// Reflector oracle prices are scaled by 10^7
+const REFLECTOR_PRICE_SCALE = 1e7
+
+// Dummy source account used only for Soroban simulation (no funds needed)
+const SIMULATION_SOURCE_ACCOUNT = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN'
 
 export class ReflectorService {
     private coinGeckoApiKey: string
@@ -10,17 +24,33 @@ export class ReflectorService {
     private readonly CACHE_DURATION = process.env.NODE_ENV === 'production' ? 600000 : 300000 // 10 min vs 5 min
     private lastRequestTime = 0
     private readonly MIN_REQUEST_INTERVAL = 90000 // Increased to 1.5 minutes for Pro API
+    private reflectorContractId: string | null
+    private sorobanRpcUrl: string
+    // Maps asset codes to the symbols the Reflector contract recognises
+    private readonly reflectorAssetSymbols: Record<string, string> = {
+        XLM: 'XLM',
+        BTC: 'BTC',
+        ETH: 'ETH',
+        USDC: 'USDC',
+    }
 
     constructor() {
         this.coinGeckoApiKey = process.env.COINGECKO_API_KEY || ''
         this.priceCache = new Map()
+        this.reflectorContractId = process.env.REFLECTOR_CONTRACT_ID || null
+        this.sorobanRpcUrl = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org'
 
-        // FIXED: Correct CoinGecko ID mapping
         this.coinGeckoIds = {
             'XLM': 'stellar',
             'BTC': 'bitcoin',
             'ETH': 'ethereum',
             'USDC': 'usd-coin'
+        }
+
+        if (this.reflectorContractId) {
+            logger.info(`[Reflector] Oracle integration enabled (contract: ${this.reflectorContractId})`)
+        } else {
+            logger.warn('[Reflector] REFLECTOR_CONTRACT_ID not set — falling back to CoinGecko only')
         }
     }
 
@@ -87,6 +117,53 @@ export class ReflectorService {
         return cachedPrices
     }
 
+    private async fetchPricesFromReflector(assets: string[]): Promise<PricesMap> {
+        if (!this.reflectorContractId) return {}
+
+        const network = process.env.STELLAR_NETWORK === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
+        const rpc = new SorobanRpc.Server(this.sorobanRpcUrl, {
+            allowHttp: this.sorobanRpcUrl.startsWith('http://')
+        })
+        const contract = new Contract(this.reflectorContractId)
+        const sourceAccount = new Account(SIMULATION_SOURCE_ACCOUNT, '0')
+        const prices: PricesMap = {}
+
+        for (const asset of assets) {
+            const symbol = this.reflectorAssetSymbols[asset]
+            if (!symbol) continue
+
+            try {
+                const tx = new TransactionBuilder(sourceAccount, {
+                    fee: '100',
+                    networkPassphrase: network,
+                })
+                    .addOperation(contract.call('lastprice', xdr.ScVal.scvSymbol(symbol)))
+                    .setTimeout(0)
+                    .build()
+
+                const simResult = await rpc.simulateTransaction(tx)
+
+                if (SorobanRpc.Api.isSimulationSuccess(simResult) && simResult.result?.retval) {
+                    const native = scValToNative(simResult.result.retval)
+                    // Reflector returns Option<PriceData> — null when no price is available
+                    if (native && native.price !== undefined) {
+                        prices[asset] = {
+                            price: Number(BigInt(native.price)) / REFLECTOR_PRICE_SCALE,
+                            change: 0, // Reflector does not expose 24h change
+                            timestamp: Number(native.timestamp),
+                            source: 'reflector',
+                        }
+                        logger.info(`[Reflector] ${asset}: $${prices[asset].price}`)
+                    }
+                }
+            } catch (err) {
+                logger.warn(`[Reflector] Price fetch failed for ${asset}:`, err)
+            }
+        }
+
+        return prices
+    }
+
     private async getFreshPrices(assets: string[]): Promise<PricesMap> {
         const now = Date.now()
 
@@ -97,6 +174,26 @@ export class ReflectorService {
         }
 
         this.lastRequestTime = now
+
+        // Try Reflector oracle first; fall back to CoinGecko for any missing assets
+        const reflectorPrices = await this.fetchPricesFromReflector(assets).catch(err => {
+            logger.warn('[Reflector] Batch fetch failed, falling back to CoinGecko:', err)
+            return {} as PricesMap
+        })
+
+        const missingAssets = assets.filter(a => !reflectorPrices[a])
+
+        if (missingAssets.length === 0) {
+            // Cache and return Reflector prices directly
+            for (const [asset, data] of Object.entries(reflectorPrices)) {
+                this.priceCache.set(asset, { data, timestamp: Date.now() })
+            }
+            return reflectorPrices
+        }
+
+        if (reflectorPrices && Object.keys(reflectorPrices).length > 0) {
+            logger.info(`[Reflector] Got prices for ${Object.keys(reflectorPrices).join(', ')}; fetching ${missingAssets.join(', ')} from CoinGecko`)
+        }
 
         try {
             const apiKey = this.coinGeckoApiKey
@@ -111,8 +208,8 @@ export class ReflectorService {
                 'User-Agent': 'StellarPortfolioRebalancer/1.0'
             }
 
-            // FIXED: Build correct coin IDs
-            const coinIds = assets
+            // Only fetch from CoinGecko for assets not already provided by Reflector
+            const coinIds = missingAssets
                 .map(asset => this.coinGeckoIds[asset])
                 .filter(Boolean)
                 .join(',')
@@ -172,9 +269,9 @@ export class ReflectorService {
             const data = await response.json()
             logger.info('[DEBUG] CoinGecko response data:', data)
 
-            const prices: PricesMap = {}
+            const coinGeckoPrices: PricesMap = {}
 
-            assets.forEach(asset => {
+            missingAssets.forEach(asset => {
                 const coinId = this.coinGeckoIds[asset]
                 const coinData = data[coinId]
 
@@ -187,9 +284,8 @@ export class ReflectorService {
                         volume: coinData.usd_24h_vol || 0
                     }
 
-                    prices[asset] = priceData
+                    coinGeckoPrices[asset] = priceData
 
-                    // Cache the fresh data
                     this.priceCache.set(asset, {
                         data: priceData,
                         timestamp: Date.now()
@@ -201,11 +297,18 @@ export class ReflectorService {
                 }
             })
 
-            if (Object.keys(prices).length === 0) {
-                throw new Error('No valid price data received from CoinGecko')
+            // Cache Reflector prices alongside CoinGecko prices
+            for (const [asset, data] of Object.entries(reflectorPrices)) {
+                this.priceCache.set(asset, { data, timestamp: Date.now() })
             }
 
-            return prices
+            const merged = { ...reflectorPrices, ...coinGeckoPrices }
+
+            if (Object.keys(merged).length === 0) {
+                throw new Error('No valid price data received from any source')
+            }
+
+            return merged
         } catch (error) {
             console.error('[ERROR] Fresh price fetch failed:', error)
             throw error
