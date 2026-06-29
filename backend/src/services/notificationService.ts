@@ -110,8 +110,10 @@ class WebhookProvider implements NotificationProvider {
     };
 
     // Persist delivery attempt before sending
+    // eventId is guaranteed set by notify() before this method is called
+    const eventId = payload.eventId!;
     dbRecordWebhookDelivery({
-      eventId: payload.eventId,
+      eventId,
       userId: payload.userId,
       eventType: payload.eventType,
       url: preferences.webhookUrl,
@@ -121,14 +123,14 @@ class WebhookProvider implements NotificationProvider {
 
     try {
       await this.sendWithRetry(preferences.webhookUrl, webhookPayload, 0, preferences.webhookSecret);
-      dbUpdateWebhookDeliveryStatus(payload.eventId, 'delivered');
+      dbUpdateWebhookDeliveryStatus(eventId, 'delivered');
     } catch (error) {
-      dbUpdateWebhookDeliveryStatus(payload.eventId, 'failed');
+      dbUpdateWebhookDeliveryStatus(eventId, 'failed');
       // Enqueue for async retry via BullMQ
       const queue = getWebhookDeliveryQueue();
       if (queue) {
         await queue.add('webhook-retry', {
-          eventId: payload.eventId,
+          eventId,
           url: preferences.webhookUrl,
           payload: webhookPayload,
           webhookSecret: preferences.webhookSecret,
