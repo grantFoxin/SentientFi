@@ -1,11 +1,16 @@
+import { randomUUID } from "crypto";
 import { logger } from "../utils/logger.js";
 import {
   dbSaveNotificationPreferences,
   dbGetNotificationPreferences,
   dbGetAllNotificationPreferences,
   dbUpdateWebhookSecret,
+  dbRecordWebhookDelivery,
+  dbUpdateWebhookDeliveryStatus,
+  dbGetPendingWebhookDeliveries,
   type NotificationPreferences,
 } from "../db/notificationDb.js";
+import { getWebhookDeliveryQueue } from "../queue/queues.js";
 import nodemailer from "nodemailer";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 
@@ -14,6 +19,7 @@ import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 // ─────────────────────────────────────────────
 
 export interface NotificationPayload {
+  eventId: string;
   userId: string;
   eventType: "rebalance" | "circuitBreaker" | "priceMovement" | "riskChange";
   title: string;
@@ -40,7 +46,7 @@ interface NotificationProvider {
 function signPayload(payload: any, secret: string): { signature: string; timestamp: string } {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const payloadString = JSON.stringify(payload);
-  const signatureInput = `${timestamp}.${payloadString}`;
+  const signatureInput = `${timestamp}.${payload.eventId}.${payloadString}`;
   const signature = createHmac('sha256', secret)
     .update(signatureInput)
     .digest('hex');
@@ -62,7 +68,7 @@ function verifyWebhookSignature(
   
   // Compute expected signature
   const payloadString = JSON.stringify(payload);
-  const signatureInput = `${timestamp}.${payloadString}`;
+  const signatureInput = `${timestamp}.${payload.eventId}.${payloadString}`;
   const expectedSignature = createHmac('sha256', secret)
     .update(signatureInput)
     .digest('hex');
@@ -94,6 +100,7 @@ class WebhookProvider implements NotificationProvider {
     }
 
     const webhookPayload = {
+      eventId: payload.eventId,
       event: payload.eventType,
       title: payload.title,
       message: payload.message,
@@ -102,7 +109,40 @@ class WebhookProvider implements NotificationProvider {
       userId: payload.userId,
     };
 
-    await this.sendWithRetry(preferences.webhookUrl, webhookPayload, 0, preferences.webhookSecret);
+    // Persist delivery attempt before sending
+    dbRecordWebhookDelivery({
+      eventId: payload.eventId,
+      userId: payload.userId,
+      eventType: payload.eventType,
+      url: preferences.webhookUrl,
+      status: 'pending',
+      attempts: 0,
+    });
+
+    try {
+      await this.sendWithRetry(preferences.webhookUrl, webhookPayload, 0, preferences.webhookSecret);
+      dbUpdateWebhookDeliveryStatus(payload.eventId, 'delivered');
+    } catch (error) {
+      dbUpdateWebhookDeliveryStatus(payload.eventId, 'failed');
+      // Enqueue for async retry via BullMQ
+      const queue = getWebhookDeliveryQueue();
+      if (queue) {
+        await queue.add('webhook-retry', {
+          eventId: payload.eventId,
+          url: preferences.webhookUrl,
+          payload: webhookPayload,
+          webhookSecret: preferences.webhookSecret,
+          attempt: 0,
+        }, {
+          attempts: 4,
+          backoff: { type: 'exponential', delay: 10000 },
+        });
+        logger.info("Webhook delivery enqueued for retry", {
+          eventId: payload.eventId,
+        });
+      }
+      throw error;
+    }
   }
 
   private async sendWithRetry(
@@ -393,6 +433,11 @@ export class NotificationService {
    * Send notification to user
    */
   async notify(payload: NotificationPayload): Promise<void> {
+    // Ensure every notification has a stable event ID for deduplication
+    if (!payload.eventId) {
+      payload.eventId = randomUUID();
+    }
+
     const preferences = this.getPreferences(payload.userId);
     if (!preferences) {
       logger.info("No notification preferences found for user", {
