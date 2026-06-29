@@ -34,4 +34,6 @@ pub enum Error {
     ExcessiveDrift = 6,
     AlreadyInitialized = 7,
     InvalidThreshold = 8,
+    InvalidAmount = 9,
+    MissingPriceData = 10,
 }

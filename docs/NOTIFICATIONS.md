@@ -92,6 +92,8 @@ All webhook notifications are sent as HTTP POST requests with the following JSON
 ```
 Content-Type: application/json
 User-Agent: StellarPortfolioRebalancer/1.0
+X-Webhook-Signature: sha256=<hex-signature>
+X-Webhook-Timestamp: <unix-timestamp>
 ```
 
 ### Webhook Response
@@ -100,6 +102,133 @@ Your webhook endpoint should:
 - Respond with HTTP 2xx status code for success
 - Respond within 5 seconds (timeout)
 - Handle retries gracefully (1 retry after 1 second delay)
+
+## Webhook Signature Verification
+
+Every webhook notification includes an HMAC-SHA256 signature for payload verification. This ensures the webhook was sent by SentientFi and hasn't been tampered with.
+
+### Signature Headers
+
+| Header | Description |
+|--------|-------------|
+| `X-Webhook-Signature` | HMAC-SHA256 signature in format `sha256=<hex>` |
+| `X-Webhook-Timestamp` | Unix timestamp when the signature was generated |
+
+### Verification Process
+
+1. **Extract the signature** from the `X-Webhook-Signature` header (remove `sha256=` prefix)
+2. **Extract the timestamp** from the `X-Webhook-Timestamp` header
+3. **Check timestamp tolerance** - reject requests older than 5 minutes (300 seconds)
+4. **Compute expected signature** using `HMAC-SHA256(secret, timestamp + "." + payload)`
+5. **Compare signatures** using timing-safe comparison to prevent timing attacks
+
+### Node.js/Express Verification
+
+```javascript
+const crypto = require('crypto');
+
+function verifyWebhookSignature(payload, signature, timestamp, secret) {
+  // Check timestamp tolerance (5 minutes)
+  const currentTime = Math.floor(Date.now() / 1000);
+  if (Math.abs(currentTime - parseInt(timestamp)) > 300) {
+    return false;
+  }
+  
+  // Compute expected signature
+  const payloadString = JSON.stringify(payload);
+  const signatureInput = `${timestamp}.${payloadString}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(signatureInput)
+    .digest('hex');
+  
+  // Timing-safe comparison
+  try {
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
+}
+
+// Express middleware example
+app.post('/webhook', express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }), (req, res) => {
+  const signature = req.headers['x-webhook-signature']?.replace('sha256=', '');
+  const timestamp = req.headers['x-webhook-timestamp'];
+  const secret = process.env.WEBHOOK_SECRET;
+  
+  if (!signature || !timestamp) {
+    return res.status(401).json({ error: 'Missing signature headers' });
+  }
+  
+  if (!verifyWebhookSignature(req.body, signature, timestamp, secret)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  
+  // Process verified webhook
+  const { event, data } = req.body;
+  console.log(`Verified ${event} notification`);
+  
+  res.status(200).json({ received: true });
+});
+```
+
+### Python/Flask Verification
+
+```python
+import hmac
+import hashlib
+import time
+import json
+
+def verify_webhook_signature(payload, signature, timestamp, secret, tolerance=300):
+    """Verify webhook HMAC-SHA256 signature."""
+    # Check timestamp tolerance
+    current_time = int(time.time())
+    if abs(current_time - int(timestamp)) > tolerance:
+        return False
+    
+    # Compute expected signature
+    payload_string = json.dumps(payload, separators=(',', ':'))
+    signature_input = f"{timestamp}.{payload_string}"
+    expected_signature = hmac.new(
+        secret.encode('utf-8'),
+        signature_input.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    # Timing-safe comparison
+    return hmac.compare_digest(signature, expected_signature)
+
+# Flask route example
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    signature = request.headers.get('X-Webhook-Signature', '').replace('sha256=', '')
+    timestamp = request.headers.get('X-Webhook-Timestamp')
+    secret = os.environ.get('WEBHOOK_SECRET')
+    
+    if not signature or not timestamp:
+        return jsonify({'error': 'Missing signature headers'}), 401
+    
+    if not verify_webhook_signature(request.json, signature, timestamp, secret):
+        return jsonify({'error': 'Invalid signature'}), 401
+    
+    # Process verified webhook
+    payload = request.json
+    event = payload.get('event')
+    print(f"Verified {event} notification")
+    
+    return jsonify({'received': True}), 200
+```
+
+### Security Best Practices
+
+1. **Store secrets securely** - Use environment variables, not hardcoded values
+2. **Rotate secrets regularly** - Use the rotation endpoint to generate new secrets
+3. **Always verify signatures** - Never process unverified webhooks in production
+4. **Check timestamp tolerance** - Prevent replay attacks by rejecting old timestamps
+5. **Use HTTPS** - Webhook URLs should always use HTTPS in production
 
 ### Example Webhook Implementations
 
@@ -290,9 +419,18 @@ Content-Type: application/json
 {
   "success": true,
   "message": "Notification preferences saved successfully",
+  "webhookSecret": "a1b2c3d4e5f6...",
   "timestamp": "2024-02-20T10:30:00.000Z"
 }
 ```
+
+**Note:** The `webhookSecret` is only included when a new secret is generated (first subscription or when webhook is newly enabled). Store this secret securely for signature verification.
+
+**Important Security Note:** The webhook secret is **only** returned in two scenarios:
+1. **Subscribe response** (`POST /api/notifications/subscribe`): Only when a new secret is generated
+2. **Rotation response** (`POST /api/notifications/rotate-webhook-secret`): Always returns the new secret
+
+The **GET** endpoint (`GET /api/notifications/preferences`) does **NOT** include the webhook secret in the response. This prevents accidental exposure through normal API usage. The secret is stored securely in the database and used internally for signing webhooks.
 
 ### Get Notification Preferences
 ```http
@@ -333,6 +471,28 @@ DELETE /api/notifications/unsubscribe?userId=GXXXXXXX...
   "timestamp": "2024-02-20T10:30:00.000Z"
 }
 ```
+
+### Rotate Webhook Secret
+```http
+POST /api/notifications/rotate-webhook-secret
+Content-Type: application/json
+
+{
+  "userId": "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "webhookSecret": "a1b2c3d4e5f6...",
+  "message": "Webhook secret rotated successfully. Store this secret securely - it will not be shown again.",
+  "timestamp": "2024-02-20T10:30:00.000Z"
+}
+```
+
+**Note:** The webhook secret is only shown once when first generated or rotated. Store it securely. You can rotate the secret at any time if compromised.
 
 ### Test Notification Delivery
 ```http
@@ -537,7 +697,7 @@ Content-Type: application/json
 
 - [ ] SMS notifications via Twilio
 - [ ] Push notifications for mobile apps
-- [ ] Webhook signature verification
+- [x] Webhook signature verification
 - [ ] Notification templates customization
 - [ ] Notification history/logs
 - [ ] Batch notifications
