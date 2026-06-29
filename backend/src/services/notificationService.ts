@@ -19,7 +19,7 @@ import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 // ─────────────────────────────────────────────
 
 export interface NotificationPayload {
-  eventId: string;
+  eventId?: string;
   userId: string;
   eventType: "rebalance" | "circuitBreaker" | "priceMovement" | "riskChange";
   title: string;
