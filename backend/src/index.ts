@@ -19,6 +19,7 @@ import { startQueueScheduler } from './queue/scheduler.js'
 import { startPortfolioCheckWorker, stopPortfolioCheckWorker } from './queue/workers/portfolioCheckWorker.js'
 import { startRebalanceWorker, stopRebalanceWorker } from './queue/workers/rebalanceWorker.js'
 import { startAnalyticsSnapshotWorker, stopAnalyticsSnapshotWorker } from './queue/workers/analyticsSnapshotWorker.js'
+import { startWebhookDeliveryWorker, stopWebhookDeliveryWorker } from './queue/workers/webhookDeliveryWorker.js'
 import { contractEventIndexerService } from './services/contractEventIndexer.js'
 
 let startupConfig: StartupConfig
@@ -248,10 +249,11 @@ server.listen(port, async () => {
     logQueueStartup(redisAvailable)
 
     if (redisAvailable) {
-        // Start all three workers
+        // Start all workers
         startPortfolioCheckWorker()
         startRebalanceWorker()
         startAnalyticsSnapshotWorker()
+        startWebhookDeliveryWorker()
 
         // Register repeatable jobs (scheduler)
         try {
@@ -324,6 +326,7 @@ const gracefulShutdown = async (signal: string) => {
             stopPortfolioCheckWorker(),
             stopRebalanceWorker(),
             stopAnalyticsSnapshotWorker(),
+            stopWebhookDeliveryWorker(),
         ])
         console.log('[SHUTDOWN] BullMQ workers stopped')
     } catch (error) {
