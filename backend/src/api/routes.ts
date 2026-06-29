@@ -1361,3 +1361,5 @@ router.get("/queue/health", async (req, res) => {
     });
   }
 });
+
+export { router as portfolioRouter };
