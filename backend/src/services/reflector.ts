@@ -24,6 +24,7 @@ export class ReflectorService {
     private readonly CACHE_DURATION = process.env.NODE_ENV === 'production' ? 600000 : 300000 // 10 min vs 5 min
     private lastRequestTime = 0
     private readonly MIN_REQUEST_INTERVAL = 90000 // Increased to 1.5 minutes for Pro API
+    private inflightPriceRequest: Promise<PricesMap> | null = null
     private reflectorContractId: string | null
     private sorobanRpcUrl: string
     // Maps asset codes to the symbols the Reflector contract recognises
@@ -173,8 +174,24 @@ export class ReflectorService {
             return {}
         }
 
+        // Deduplicate concurrent requests: collapse all callers onto one in-flight fetch.
+        // Without this, N concurrent callers (e.g. BullMQ workers) each read a stale
+        // lastRequestTime, pass the guard, and fire N simultaneous HTTP requests.
+        if (this.inflightPriceRequest) {
+            logger.info('[DEBUG] Reusing in-flight price request')
+            return this.inflightPriceRequest
+        }
+
         this.lastRequestTime = now
 
+        this.inflightPriceRequest = this._doFetchPrices(assets).finally(() => {
+            this.inflightPriceRequest = null
+        })
+
+        return this.inflightPriceRequest
+    }
+
+    private async _doFetchPrices(assets: string[]): Promise<PricesMap> {
         // Try Reflector oracle first; fall back to CoinGecko for any missing assets
         const reflectorPrices = await this.fetchPricesFromReflector(assets).catch(err => {
             logger.warn('[Reflector] Batch fetch failed, falling back to CoinGecko:', err)
