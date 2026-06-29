@@ -8,7 +8,6 @@ import { v1Router } from './api/v1Router.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
 import { legacyApiDeprecation } from './middleware/legacyApiDeprecation.js'
 import { globalRateLimiter } from './middleware/rateLimit.js'
-import { RebalancingService } from './monitoring/rebalancer.js'
 import { AutoRebalancerService } from './services/autoRebalancer.js'
 import { logger } from './utils/logger.js'
 import { databaseService } from './services/databaseService.js'
@@ -20,6 +19,7 @@ import { startQueueScheduler } from './queue/scheduler.js'
 import { startPortfolioCheckWorker, stopPortfolioCheckWorker } from './queue/workers/portfolioCheckWorker.js'
 import { startRebalanceWorker, stopRebalanceWorker } from './queue/workers/rebalanceWorker.js'
 import { startAnalyticsSnapshotWorker, stopAnalyticsSnapshotWorker } from './queue/workers/analyticsSnapshotWorker.js'
+import { startWebhookDeliveryWorker, stopWebhookDeliveryWorker } from './queue/workers/webhookDeliveryWorker.js'
 import { contractEventIndexerService } from './services/contractEventIndexer.js'
 
 let startupConfig: StartupConfig
@@ -182,9 +182,6 @@ app.use('/api/v1', v1Router)
 // Legacy namespace with deprecation headers
 app.use('/api', legacyApiDeprecation, portfolioRouter)
 
-// Root namespace (kept for backward compatibility)
-app.use('/', portfolioRouter)
-
 // 404 handler
 app.use((req, res) => {
     console.log(`404 - Route not found: ${req.method} ${req.url}`)
@@ -229,14 +226,8 @@ wss.on('connection', (ws) => {
     })
 })
 
-// Start existing rebalancing service (now queue-backed, no cron)
-try {
-    const rebalancingService = new RebalancingService(wss)
-    rebalancingService.start()
-    console.log('[REBALANCING-SERVICE] Monitoring service started (queue-backed)')
-} catch (error) {
-    console.error('Failed to start rebalancing service:', error)
-}
+// Wire wss into autoRebalancer so it can push real-time portfolio events to clients
+autoRebalancer.setWss(wss)
 
 // Start server
 server.listen(port, async () => {
@@ -258,10 +249,11 @@ server.listen(port, async () => {
     logQueueStartup(redisAvailable)
 
     if (redisAvailable) {
-        // Start all three workers
+        // Start all workers
         startPortfolioCheckWorker()
         startRebalanceWorker()
         startAnalyticsSnapshotWorker()
+        startWebhookDeliveryWorker()
 
         // Register repeatable jobs (scheduler)
         try {
@@ -334,6 +326,7 @@ const gracefulShutdown = async (signal: string) => {
             stopPortfolioCheckWorker(),
             stopRebalanceWorker(),
             stopAnalyticsSnapshotWorker(),
+            stopWebhookDeliveryWorker(),
         ])
         console.log('[SHUTDOWN] BullMQ workers stopped')
     } catch (error) {

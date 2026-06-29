@@ -1,24 +1,50 @@
 name: Backend Tests
 
 on:
-  pull_request:
-    paths:
-      - 'backend/**'
-
-      - '.github/workflows/backend-tests.yml'
   push:
     branches:
       - main
       - develop
     paths:
       - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
 
-      - name: Upload test results
+jobs:
+  unit-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Run tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+        run: npm test
+      # ponytail: tests use a temp SQLite db (src/test/setup.ts), no Postgres/Redis services needed
+      - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.node-version }}
+          name: backend-coverage
           path: backend/coverage/
           if-no-files-found: ignore
 
-  
+  validate-compose:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose config
+        run: docker compose -f deployment/docker-compose.yml config

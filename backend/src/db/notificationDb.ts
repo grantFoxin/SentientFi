@@ -150,7 +150,95 @@ export function dbDeleteNotificationPreferences(userId: string): boolean {
 export function dbUpdateWebhookSecret(userId: string, secret: string): void {
     ensureNotificationTable()
     const db = getDb()
-    
+
     const now = new Date().toISOString()
     db.prepare('UPDATE notification_preferences SET webhook_secret = ?, updated_at = ? WHERE user_id = ?').run(secret, now, userId)
+}
+
+// ─── Webhook Delivery Tracking ─────────────────────────────────────────────
+
+export interface WebhookDeliveryRow {
+    event_id: string
+    user_id: string
+    event_type: string
+    url: string
+    status: string
+    attempts: number
+    last_attempt_at: string | null
+    created_at: string
+}
+
+export interface WebhookDeliveryRecord {
+    eventId: string
+    userId: string
+    eventType: string
+    url: string
+    status: 'pending' | 'delivered' | 'failed'
+    attempts: number
+}
+
+function ensureWebhookDeliveriesTable() {
+    const db = getDb()
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            event_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at TEXT,
+            created_at TEXT NOT NULL
+        );
+    `)
+}
+
+export function dbRecordWebhookDelivery(record: WebhookDeliveryRecord): void {
+    ensureWebhookDeliveriesTable()
+    const db = getDb()
+    const now = new Date().toISOString()
+
+    db.prepare(`
+        INSERT OR REPLACE INTO webhook_deliveries
+            (event_id, user_id, event_type, url, status, attempts, last_attempt_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        record.eventId,
+        record.userId,
+        record.eventType,
+        record.url,
+        record.status,
+        record.attempts,
+        now,
+        now
+    )
+}
+
+export function dbUpdateWebhookDeliveryStatus(
+    eventId: string,
+    status: 'pending' | 'delivered' | 'failed',
+    attempts?: number
+): void {
+    ensureWebhookDeliveriesTable()
+    const db = getDb()
+    const now = new Date().toISOString()
+
+    if (attempts !== undefined) {
+        db.prepare(
+            'UPDATE webhook_deliveries SET status = ?, attempts = ?, last_attempt_at = ? WHERE event_id = ?'
+        ).run(status, attempts, now, eventId)
+    } else {
+        db.prepare(
+            'UPDATE webhook_deliveries SET status = ?, last_attempt_at = ? WHERE event_id = ?'
+        ).run(status, now, eventId)
+    }
+}
+
+export function dbGetPendingWebhookDeliveries(): WebhookDeliveryRow[] {
+    ensureWebhookDeliveriesTable()
+    const db = getDb()
+
+    return db.prepare<[], WebhookDeliveryRow>(
+        "SELECT * FROM webhook_deliveries WHERE status = 'pending' ORDER BY created_at ASC"
+    ).all()
 }
