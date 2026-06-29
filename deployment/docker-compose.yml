@@ -87,6 +87,8 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3002
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-portfolio_user}:${POSTGRES_PASSWORD:-portfolio_pass}@postgres:5432/${POSTGRES_DB:-stellar_portfolio}
+      - REDIS_URL=redis://redis:6379
       - CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-CCQ4LISQJFTZJKQDRJHRLXQ2UML45GVXUECN5NGSQKAT55JKAK2JAX7I}
       - STELLAR_NETWORK=${STELLAR_NETWORK:-testnet}
       - STELLAR_HORIZON_URL=${STELLAR_HORIZON_URL:-https://horizon-testnet.stellar.org}
@@ -95,8 +97,12 @@ services:
       - ALLOW_FALLBACK_PRICES=${ALLOW_FALLBACK_PRICES:-true}
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - redis
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      backend:
+        condition: service_started
 
 volumes:
   postgres_data:
