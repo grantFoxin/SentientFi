@@ -61,6 +61,7 @@ interface RebalanceHistoryRow {
     risk_alerts: string | null
     error: string | null
     details: string | null
+    event_source: string | null
 }
 
 // ─────────────────────────────────────────────
@@ -264,7 +265,8 @@ function rowToEvent(row: RebalanceHistoryRow): RebalanceEvent {
         isAutomatic: row.is_automatic === 1,
         riskAlerts: safeJsonParse(row.risk_alerts, [], `event(${row.id}).risk_alerts`),
         error: row.error ?? undefined,
-        details: safeJsonParse(row.details, undefined, `event(${row.id}).details`)
+        details: safeJsonParse(row.details, undefined, `event(${row.id}).details`),
+        eventSource: (row.event_source as RebalanceEvent['eventSource']) ?? undefined
     }
 }
 
