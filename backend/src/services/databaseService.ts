@@ -301,6 +301,12 @@ export class DatabaseService {
             this.db.exec("ALTER TABLE portfolios ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
             console.log('[DB] Migration: added version column to portfolios')
         }
+
+        const historyCols = this.db.prepare("PRAGMA table_info(rebalance_history)").all() as Array<{ name: string }>
+        if (!historyCols.some(c => c.name === 'event_source')) {
+            this.db.exec("ALTER TABLE rebalance_history ADD COLUMN event_source TEXT")
+            console.log('[DB] Migration: added event_source column to rebalance_history')
+        }
     }
 
     // ── Public accessor for backward-compat (routes use portfolioStorage.portfolios.size) ──
