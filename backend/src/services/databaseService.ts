@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS rebalance_history (
     risk_alerts   TEXT,
     error         TEXT,
     details       TEXT,
+    event_source  TEXT,
     FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
 );
 
