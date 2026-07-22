@@ -206,6 +206,33 @@ describe('DatabaseService – rebalance history', () => {
         expect(history.length).toBe(3)
     })
 
+    it('eventSource option filters history to matching records only', () => {
+        const portfolioId = db.createPortfolio('GSOURCE', { XLM: 100 }, 5)
+
+        db.recordRebalanceEvent({ portfolioId, trigger: 'Manual', trades: 1, gasUsed: '0 XLM', status: 'completed', eventSource: 'offchain' })
+        db.recordRebalanceEvent({ portfolioId, trigger: 'Simulated', trades: 1, gasUsed: '0 XLM', status: 'completed', eventSource: 'simulated' })
+        db.recordRebalanceEvent({ portfolioId, trigger: 'Indexed', trades: 1, gasUsed: '0 XLM', status: 'completed', eventSource: 'onchain' })
+
+        const onchainOnly = db.getRebalanceHistory(portfolioId, 50, { eventSource: 'onchain' })
+        expect(onchainOnly.length).toBe(1)
+        expect(onchainOnly[0].trigger).toBe('Indexed')
+    })
+
+    it('startTimestamp and endTimestamp options restrict history to the given range', () => {
+        const portfolioId = db.createPortfolio('GRANGE', { XLM: 100 }, 5)
+
+        db.recordRebalanceEvent({ portfolioId, trigger: 'Too early', trades: 1, gasUsed: '0 XLM', status: 'completed', timestamp: '2025-01-01T00:00:00.000Z' })
+        db.recordRebalanceEvent({ portfolioId, trigger: 'In range', trades: 1, gasUsed: '0 XLM', status: 'completed', timestamp: '2025-06-01T00:00:00.000Z' })
+        db.recordRebalanceEvent({ portfolioId, trigger: 'Too late', trades: 1, gasUsed: '0 XLM', status: 'completed', timestamp: '2025-12-01T00:00:00.000Z' })
+
+        const inRange = db.getRebalanceHistory(portfolioId, 50, {
+            startTimestamp: '2025-03-01T00:00:00.000Z',
+            endTimestamp: '2025-09-01T00:00:00.000Z'
+        })
+        expect(inRange.length).toBe(1)
+        expect(inRange[0].trigger).toBe('In range')
+    })
+
     it.skip('stores on-chain indexed metadata and supports source/time filters', () => {
         // TODO: eventSource filter not yet fully implemented in getRebalanceHistory
     })
