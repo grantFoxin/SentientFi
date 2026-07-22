@@ -530,8 +530,8 @@ export class DatabaseService {
 
             this.db.prepare(`
                 INSERT INTO rebalance_history
-                    (id, portfolio_id, timestamp, trigger, trades, gas_used, status, is_automatic, risk_alerts, error, details)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, portfolio_id, timestamp, trigger, trades, gas_used, status, is_automatic, risk_alerts, error, details, event_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
                 event.id,
                 event.portfolioId,
@@ -543,7 +543,8 @@ export class DatabaseService {
                 event.isAutomatic ? 1 : 0,
                 event.riskAlerts?.length ? JSON.stringify(event.riskAlerts) : null,
                 event.error ?? null,
-                event.details ? JSON.stringify(event.details) : null
+                event.details ? JSON.stringify(event.details) : null,
+                event.eventSource ?? null
             )
 
             return event
