@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Activity, Wifi, WifiOff } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wifi, WifiOff } from 'lucide-react'
 import { API_CONFIG } from '../config/api'
 
 interface PriceTrackerProps {

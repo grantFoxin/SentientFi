@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Bell, Mail, Webhook, Save, CheckCircle, AlertCircle, Loader, Send } from 'lucide-react'
+import { Bell, Mail, Webhook, Save, CheckCircle, AlertCircle, Loader } from 'lucide-react'
 import { API_CONFIG } from '../config/api'
 
 interface NotificationPreferencesProps {
