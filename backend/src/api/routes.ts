@@ -256,7 +256,7 @@ router.get("/rebalance/history", async (req, res) => {
     });
   } catch (error) {
     console.error("[ERROR] Rebalance history failed:", error);
-    res.json({
+    res.status(500).json({
       success: false,
       error: getErrorMessage(error),
       history: [],
