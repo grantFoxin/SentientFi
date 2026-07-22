@@ -557,16 +557,32 @@ export class DatabaseService {
 
     getRebalanceHistory(portfolioId?: string, limit: number = 50, options?: RebalanceHistoryQueryOptions): RebalanceEvent[] {
         try {
+            const conditions: string[] = []
+            const params: (string | number)[] = []
+
             if (portfolioId) {
-                const rows = this.db.prepare<[string, number], RebalanceHistoryRow>(
-                    'SELECT * FROM rebalance_history WHERE portfolio_id = ? ORDER BY timestamp DESC LIMIT ?'
-                ).all(portfolioId, limit)
-                return rows.map(rowToEvent)
+                conditions.push('portfolio_id = ?')
+                params.push(portfolioId)
+            }
+            if (options?.eventSource) {
+                conditions.push('event_source = ?')
+                params.push(options.eventSource)
+            }
+            if (options?.startTimestamp) {
+                conditions.push('timestamp >= ?')
+                params.push(options.startTimestamp)
+            }
+            if (options?.endTimestamp) {
+                conditions.push('timestamp <= ?')
+                params.push(options.endTimestamp)
             }
 
-            const rows = this.db.prepare<[number], RebalanceHistoryRow>(
-                'SELECT * FROM rebalance_history ORDER BY timestamp DESC LIMIT ?'
-            ).all(limit)
+            const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+            params.push(limit)
+
+            const rows = this.db.prepare<(string | number)[], RebalanceHistoryRow>(
+                `SELECT * FROM rebalance_history ${whereClause} ORDER BY timestamp DESC LIMIT ?`
+            ).all(...params)
             return rows.map(rowToEvent)
         } catch (err) {
             throw new Error(`Failed to retrieve rebalance history${portfolioId ? ` for portfolio '${portfolioId}'` : ''
