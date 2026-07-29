@@ -408,9 +408,11 @@ export class RiskManagementService {
         const sum = Object.values(cleaned).reduce((total, value) => total + value, 0)
         if (sum <= 0) return {}
 
-        const asFraction = sum > 1.5
+        // Normalize allocations to sum to 1.0, regardless of input format
+        // Input can be percentages (e.g., {XLM: 40, BTC: 60}) or fractions (e.g., {XLM: 0.4, BTC: 0.6})
+        // Both formats are handled identically: divide by sum to ensure weights sum to exactly 1.0
         return Object.entries(cleaned).reduce<Record<string, number>>((acc, [asset, value]) => {
-            acc[asset] = asFraction ? value / sum : value / sum
+            acc[asset] = value / sum
             return acc
         }, {})
     }
