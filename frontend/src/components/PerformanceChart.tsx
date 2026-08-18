@@ -19,8 +19,8 @@ interface AnalyticsData {
 interface PerformanceSummary {
     metrics: {
         totalReturn: number
-        dailyChange: number
-        weeklyChange: number
+        dailyChange: number | null
+        weeklyChange: number | null
         maxDrawdown: number
         bestDay: { date: string; change: number }
         worstDay: { date: string; change: number }
@@ -102,7 +102,8 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
         }).format(value)
     }
 
-    const formatPercentage = (value: number) => {
+    const formatPercentage = (value: number | null | undefined) => {
+        if (value === null || value === undefined || isNaN(value)) return '—'
         return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
     }
 
@@ -238,13 +239,15 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-sm text-gray-600 dark:text-gray-400">Total Return</span>
-                            {metrics.totalReturn >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
+                            {metrics.totalReturn !== null && metrics.totalReturn !== undefined && (
+                                metrics.totalReturn >= 0 ? (
+                                    <TrendingUp className="w-4 h-4 text-green-500" />
+                                ) : (
+                                    <TrendingDown className="w-4 h-4 text-red-500" />
+                                )
                             )}
                         </div>
-                        <div className={`text-2xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-2xl font-bold ${metrics.totalReturn === null || metrics.totalReturn === undefined ? 'text-gray-500 dark:text-gray-400' : metrics.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {formatPercentage(metrics.totalReturn)}
                         </div>
                     </div>
@@ -252,13 +255,15 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-sm text-gray-600 dark:text-gray-400">Daily Change</span>
-                            {metrics.dailyChange >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
+                            {metrics.dailyChange !== null && metrics.dailyChange !== undefined && (
+                                metrics.dailyChange >= 0 ? (
+                                    <TrendingUp className="w-4 h-4 text-green-500" />
+                                ) : (
+                                    <TrendingDown className="w-4 h-4 text-red-500" />
+                                )
                             )}
                         </div>
-                        <div className={`text-2xl font-bold ${metrics.dailyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-2xl font-bold ${metrics.dailyChange === null || metrics.dailyChange === undefined ? 'text-gray-500 dark:text-gray-400' : metrics.dailyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {formatPercentage(metrics.dailyChange)}
                         </div>
                     </div>
@@ -266,13 +271,15 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-sm text-gray-600 dark:text-gray-400">Weekly Change</span>
-                            {metrics.weeklyChange >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
+                            {metrics.weeklyChange !== null && metrics.weeklyChange !== undefined && (
+                                metrics.weeklyChange >= 0 ? (
+                                    <TrendingUp className="w-4 h-4 text-green-500" />
+                                ) : (
+                                    <TrendingDown className="w-4 h-4 text-red-500" />
+                                )
                             )}
                         </div>
-                        <div className={`text-2xl font-bold ${metrics.weeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-2xl font-bold ${metrics.weeklyChange === null || metrics.weeklyChange === undefined ? 'text-gray-500 dark:text-gray-400' : metrics.weeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {formatPercentage(metrics.weeklyChange)}
                         </div>
                     </div>
