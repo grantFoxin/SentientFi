@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, AlertCircle, RefreshCw, ArrowLeft, ExternalLink } from 'lucide-react'
+import { TrendingUp, AlertCircle, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import AssetCard from './AssetCard'
@@ -27,6 +27,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
     const [loading, setLoading] = useState(true)
     const [rebalancing, setRebalancing] = useState(false)
     const [priceSource, setPriceSource] = useState<string>('loading...')
+    const [pricesStale, setPricesStale] = useState(false)
     const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'notifications' | 'test-notifications'>('overview')
     const { isDark } = useTheme()
 
@@ -91,14 +92,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
 
             // Transform to expected format if needed
             const transformedPrices: any = {}
+            let anyStale = false
             Object.entries(priceData).forEach(([asset, data]) => {
+                const d = data as any
                 transformedPrices[asset] = {
-                    price: (data as any).price,
-                    change: (data as any).change || 0
+                    price: d.price,
+                    change: d.change || 0,
+                    stale: d.stale || false
                 }
+                if (d.stale) anyStale = true
             })
 
             setPrices(transformedPrices)
+            setPricesStale(anyStale)
             setPriceSource('CoinGecko Browser API')
         } catch (error) {
             console.error('Failed to fetch prices from browser service:', error)
@@ -381,6 +387,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                     </nav>
                 </div>
 
+                {/* Stale Data Warning */}
+                {pricesStale && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-4 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-center"
+                    >
+                        <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+                                Using cached price data
+                            </p>
+                            <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
+                                Live price feeds are temporarily unavailable. Portfolio values and rebalancing reflect the last known prices.
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+
                 {/* Debug Info */}
                 {(import.meta as any).env?.DEV && (
                     <div className="bg-gray-100 dark:bg-gray-800 p-2 rounded mb-4 text-xs dark:text-gray-300">
@@ -480,7 +505,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                                         </p>
                                         <button
                                             onClick={executeRebalance}
-                                            disabled={rebalancing || !publicKey || portfolioData?.id === 'demo'}
+                                            disabled={rebalancing || !publicKey || portfolioData?.id === 'demo' || pricesStale}
                                             className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center"
                                         >
                                             {rebalancing ? (
@@ -495,6 +520,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                                         {(!publicKey || portfolioData?.id === 'demo') && (
                                             <p className="text-xs text-orange-600 dark:text-orange-400 mt-2 text-center">
                                                 {!publicKey ? 'Connect wallet to execute rebalance' : 'Create a real portfolio to enable rebalancing'}
+                                            </p>
+                                        )}
+                                        {pricesStale && publicKey && portfolioData?.id !== 'demo' && (
+                                            <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2 text-center">
+                                                Rebalancing paused — waiting for fresh price data
                                             </p>
                                         )}
                                     </motion.div>
