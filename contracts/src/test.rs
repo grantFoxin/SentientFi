@@ -589,7 +589,6 @@ fn test_create_portfolio_empty_allocations() {
 }
 
 #[test]
-#[should_panic]
 fn test_get_portfolio_not_found() {
     let env = Env::default();
     env.mock_all_auths();
@@ -600,8 +599,9 @@ fn test_get_portfolio_not_found() {
     let admin = Address::generate(&env);
     client.initialize(&admin, &reflector_id);
 
-    // Query a portfolio ID that was never created — should panic (unwrap on None)
-    client.get_portfolio(&9999);
+    // Query a portfolio ID that was never created — try_ catches the panic as an error
+    let result = client.try_get_portfolio(&9999);
+    assert!(result.is_err());
 }
 
 #[test]
