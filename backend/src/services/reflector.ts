@@ -10,7 +10,7 @@ import {
 import type { PricesMap, PriceData } from '../types/index.js'
 import { getFeatureFlags } from '../config/featureFlags.js'
 import { logger } from '../utils/logger.js'
-import { upsertPrice, getAllCachedPrices } from '../db/priceCacheDb.js'
+import { upsertPrice, getAllCachedPrices, deleteStalePrices } from '../db/priceCacheDb.js'
 
 // Reflector oracle prices are scaled by 10^7
 const REFLECTOR_PRICE_SCALE = 1e7
@@ -591,6 +591,24 @@ export class ReflectorService {
      */
     private isStale(fetchedAt: Date): boolean {
         return Date.now() - fetchedAt.getTime() > STALE_THRESHOLD_MS
+    }
+
+    /**
+     * Removes cached prices older than 24 hours from the database.
+     * Called periodically to prevent unbounded table growth.
+     */
+    async cleanupStaleCache(): Promise<number> {
+        const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000 // 24 hours
+        try {
+            const deleted = await deleteStalePrices(MAX_CACHE_AGE_MS)
+            if (deleted > 0) {
+                logger.info(`[Reflector] Cleaned up ${deleted} stale price cache entries`)
+            }
+            return deleted
+        } catch (err) {
+            logger.warn('[Reflector] Failed to cleanup stale cache:', err)
+            return 0
+        }
     }
 
     getCacheStatus(): Record<string, any> {
