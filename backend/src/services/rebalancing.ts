@@ -4,7 +4,7 @@ import { StellarService } from '../services/stellar.js'
 import { ReflectorService } from '../services/reflector.js'
 import { portfolioStorage } from '../services/portfolioStorage.js'
 import { logger } from '../utils/logger.js'
-import type { Portfolio } from '../types/index.js'
+import type { Portfolio, PricesMap } from '../types/index.js'
 
 export class RebalancingService {
     private stellarService: StellarService
@@ -27,6 +27,13 @@ export class RebalancingService {
 
     private async checkAllPortfolios() {
         try {
+            // Check if prices are stale before doing any rebalancing
+            const prices = await this.reflectorService.getCurrentPrices()
+            if (this.hasStalePrices(prices)) {
+                logger.warn('[Rebalancing] Skipping rebalance check — stale prices detected')
+                return
+            }
+
             const portfolios = await this.getActivePortfolios()
 
             for (const portfolio of portfolios) {
@@ -46,6 +53,14 @@ export class RebalancingService {
             const errorMessage = error instanceof Error ? error.message : String(error)
             logger.error('Error in portfolio monitoring:', { error: errorMessage })
         }
+    }
+
+    /**
+     * Returns true if any price in the map is marked as stale.
+     * We don't want to trigger rebalancing on bad data.
+     */
+    private hasStalePrices(prices: PricesMap): boolean {
+        return Object.values(prices).some(p => p.stale === true)
     }
 
     private async checkRebalanceLogic(portfolioId: string): Promise<boolean> {
