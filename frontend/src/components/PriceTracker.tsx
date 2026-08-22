@@ -12,6 +12,7 @@ interface PriceData {
     source: string
     timestamp: number
     volume?: number
+    stale?: boolean
 }
 
 const PriceTracker: React.FC<PriceTrackerProps> = ({ compact = false }) => {
@@ -81,7 +82,8 @@ const PriceTracker: React.FC<PriceTrackerProps> = ({ compact = false }) => {
                             change: assetData.change || assetData.usd_24h_change || 0,
                             source: assetData.source || 'coingecko',
                             timestamp: assetData.timestamp || Date.now() / 1000,
-                            volume: assetData.volume || assetData.usd_24h_vol || 0
+                            volume: assetData.volume || assetData.usd_24h_vol || 0,
+                            stale: assetData.stale || false
                         }
                     } else if (typeof assetData === 'number') {
                         // Handle simple price format
@@ -255,12 +257,14 @@ const PriceTracker: React.FC<PriceTrackerProps> = ({ compact = false }) => {
                         <div key={asset} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="font-medium text-gray-900 dark:text-white">{asset}</span>
-                                <div className={`px-2 py-1 rounded text-xs ${data.source === 'coingecko_pro' ? 'bg-green-100 text-green-800' :
+                                <div className={`px-2 py-1 rounded text-xs ${data.stale || data.source === 'cached' ? 'bg-yellow-100 text-yellow-800' :
+                                    data.source === 'coingecko_pro' ? 'bg-green-100 text-green-800' :
                                     data.source === 'coingecko_free' || data.source === 'coingecko' ? 'bg-blue-100 text-blue-800' :
                                         data.source === 'reflector' ? 'bg-purple-100 text-purple-800' :
                                             'bg-red-100 text-red-800'
                                     }`}>
-                                    {data.source === 'coingecko_pro' ? 'Pro' :
+                                    {data.stale || data.source === 'cached' ? 'Cached' :
+                                        data.source === 'coingecko_pro' ? 'Pro' :
                                         data.source === 'coingecko_free' || data.source === 'coingecko' ? 'CoinGecko' :
                                             data.source === 'reflector' ? 'Reflector' :
                                                 'Fallback'}
@@ -287,6 +291,17 @@ const PriceTracker: React.FC<PriceTrackerProps> = ({ compact = false }) => {
                     )
                 })}
             </div>
+
+            {Object.values(prices).some(p => p.stale) && (
+                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                    <div className="flex items-center">
+                        <WifiOff className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mr-2" />
+                        <span className="text-sm text-yellow-800 dark:text-yellow-300">
+                            Price oracle unavailable. Showing cached prices from the last successful fetch.
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {!isConnected && (
                 <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
