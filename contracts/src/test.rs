@@ -488,6 +488,49 @@ fn test_concurrent_portfolio_creation() {
 }
 
 #[test]
+#[should_panic]
+fn test_set_emergency_stop_unauthorized() {
+    let env = Env::default();
+    // Do NOT use mock_all_auths — we want to control who is authorized
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+
+    // Only authorize the admin for initialize
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &admin,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "initialize",
+                args: (&admin, &reflector_id).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+    client.initialize(&admin, &reflector_id);
+
+    // Now authorize only non_admin for the set_emergency_stop call.
+    // Since non_admin is NOT the admin, require_auth() on admin should fail.
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &non_admin,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_emergency_stop",
+                args: (true,).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // This should panic because admin.require_auth() fails when only non_admin is authorized
+    client.set_emergency_stop(&true);
+}
+
+#[test]
 fn test_same_user_two_portfolios() {
     let env = Env::default();
     env.mock_all_auths();
