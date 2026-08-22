@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { apiRequest, API_CONFIG } from '../config/api'
 
 interface PortfolioData {
     id: string
@@ -13,6 +14,11 @@ interface PortfolioData {
     lastRebalance: string
 }
 
+interface PortfolioResponse {
+    success: boolean
+    portfolio: PortfolioData
+}
+
 export const usePortfolio = (portfolioId?: string) => {
     const [portfolio, setPortfolio] = useState<PortfolioData | null>(null)
     const [loading, setLoading] = useState(true)
@@ -24,10 +30,9 @@ export const usePortfolio = (portfolioId?: string) => {
         const fetchPortfolio = async () => {
             try {
                 setLoading(true)
-                const response = await fetch(`/api/portfolio/${portfolioId}`)
-                if (!response.ok) throw new Error('Failed to fetch portfolio')
-
-                const data = await response.json()
+                const data = await apiRequest<PortfolioResponse>(
+                    API_CONFIG.ENDPOINTS.PORTFOLIO_DETAIL(portfolioId)
+                )
                 setPortfolio(data.portfolio)
                 setError(null)
             } catch (err) {
@@ -48,14 +53,15 @@ export const usePortfolio = (portfolioId?: string) => {
         if (!portfolioId) return
 
         try {
-            const response = await fetch(`/api/portfolio/${portfolioId}/rebalance`, {
-                method: 'POST'
-            })
-            if (!response.ok) throw new Error('Rebalance failed')
+            await apiRequest(
+                API_CONFIG.ENDPOINTS.PORTFOLIO_REBALANCE(portfolioId),
+                { method: 'POST' }
+            )
 
             // Refresh portfolio data
-            const portfolioResponse = await fetch(`/api/portfolio/${portfolioId}`)
-            const data = await portfolioResponse.json()
+            const data = await apiRequest<PortfolioResponse>(
+                API_CONFIG.ENDPOINTS.PORTFOLIO_DETAIL(portfolioId)
+            )
             setPortfolio(data.portfolio)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Rebalance failed')
