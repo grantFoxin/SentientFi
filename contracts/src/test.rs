@@ -488,6 +488,32 @@ fn test_concurrent_portfolio_creation() {
 }
 
 #[test]
+fn test_set_emergency_stop_blocks_deposit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Create portfolio before enabling emergency stop
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset.clone(), 100);
+    let pid = client.create_portfolio(&user, &allocations, &5);
+
+    // Admin enables emergency stop
+    client.set_emergency_stop(&true);
+
+    // User tries to deposit — should be blocked
+    let result = client.try_deposit(&pid, &asset, &100);
+    assert_eq!(result, Err(Ok(Error::EmergencyStop)));
+}
+
+#[test]
 #[should_panic]
 fn test_set_emergency_stop_unauthorized() {
     let env = Env::default();
