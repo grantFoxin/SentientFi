@@ -10,9 +10,13 @@ import {
 import type { PricesMap, PriceData } from '../types/index.js'
 import { getFeatureFlags } from '../config/featureFlags.js'
 import { logger } from '../utils/logger.js'
+import { upsertPrice, getAllCachedPrices } from '../db/priceCacheDb.js'
 
 // Reflector oracle prices are scaled by 10^7
 const REFLECTOR_PRICE_SCALE = 1e7
+
+// Prices older than this are considered stale (1 hour)
+const STALE_THRESHOLD_MS = 60 * 60 * 1000
 
 // Dummy source account used only for Soroban simulation (no funds needed)
 const SIMULATION_SOURCE_ACCOUNT = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN'
@@ -75,7 +79,7 @@ export class ReflectorService {
                     return cachedPrices
                 }
                 if (getFeatureFlags().allowFallbackPrices) {
-                    return this.getFallbackPrices()
+                    return await this.getFallbackPrices()
                 }
                 throw new Error('Price request rate-limited and ALLOW_FALLBACK_PRICES is disabled')
             }
@@ -100,7 +104,7 @@ export class ReflectorService {
                 throw new Error('Price sources unavailable and ALLOW_FALLBACK_PRICES is disabled')
             }
 
-            return this.getFallbackPrices()
+            return await this.getFallbackPrices()
         }
     }
 
@@ -204,6 +208,7 @@ export class ReflectorService {
             // Cache and return Reflector prices directly
             for (const [asset, data] of Object.entries(reflectorPrices)) {
                 this.priceCache.set(asset, { data, timestamp: Date.now() })
+                void this.persistPriceToDb(asset, data.price, data.source ?? 'reflector')
             }
             return reflectorPrices
         }
@@ -307,6 +312,7 @@ export class ReflectorService {
                         data: priceData,
                         timestamp: Date.now()
                     })
+                    void this.persistPriceToDb(asset, priceData.price, priceData.source ?? 'coingecko')
 
                     console.log(`[SUCCESS] Fresh ${asset} price: $${priceData.price} (${priceData.change > 0 ? '+' : ''}${priceData.change.toFixed(2)}%)`)
                 } else {
@@ -317,6 +323,7 @@ export class ReflectorService {
             // Cache Reflector prices alongside CoinGecko prices
             for (const [asset, data] of Object.entries(reflectorPrices)) {
                 this.priceCache.set(asset, { data, timestamp: Date.now() })
+                void this.persistPriceToDb(asset, data.price, data.source ?? 'reflector')
             }
 
             const merged = { ...reflectorPrices, ...coinGeckoPrices }
@@ -475,42 +482,43 @@ export class ReflectorService {
         return history
     }
 
-    private getFallbackPrices(): PricesMap {
-        console.warn('[FALLBACK] Using fallback prices - all sources failed')
+    private async getFallbackPrices(): Promise<PricesMap> {
+        logger.warn('[FALLBACK] All price sources failed, checking database cache')
 
-        // Add some randomness to make fallback prices look more realistic
-        const addVariation = (basePrice: number) => {
-            const variation = (Math.random() - 0.5) * 0.02 // ±1% variation
-            return basePrice * (1 + variation)
+        try {
+            const cachedRows = await getAllCachedPrices()
+            if (cachedRows.length > 0) {
+                const fallback: PricesMap = {}
+                for (const row of cachedRows) {
+                    const stale = this.isStale(row.fetched_at)
+                    fallback[row.asset] = {
+                        price: row.price,
+                        change: 0,
+                        timestamp: Math.floor(row.fetched_at.getTime() / 1000),
+                        source: 'cached',
+                        stale,
+                    }
+                    if (stale) {
+                        logger.warn(`[FALLBACK] ${row.asset} price is stale (fetched ${row.fetched_at.toISOString()})`)
+                    } else {
+                        logger.info(`[FALLBACK] Using cached ${row.asset} price: $${row.price}`)
+                    }
+                }
+                return fallback
+            }
+        } catch (err) {
+            logger.warn('[FALLBACK] Failed to read cached prices from DB:', err)
         }
 
+        // Last resort: hardcoded prices with no variation
+        logger.warn('[FALLBACK] No cached prices in DB, using hardcoded defaults')
         const now = Math.floor(Date.now() / 1000)
 
         return {
-            XLM: {
-                price: addVariation(0.354),
-                change: (Math.random() - 0.5) * 4, // Random change ±2%
-                timestamp: now,
-                source: 'fallback'
-            },
-            USDC: {
-                price: addVariation(1.0),
-                change: (Math.random() - 0.5) * 0.1, // Minimal change for stablecoin
-                timestamp: now,
-                source: 'fallback'
-            },
-            BTC: {
-                price: addVariation(110000),
-                change: (Math.random() - 0.5) * 6, // Random change ±3%
-                timestamp: now,
-                source: 'fallback'
-            },
-            ETH: {
-                price: addVariation(4200),
-                change: (Math.random() - 0.5) * 5, // Random change ±2.5%
-                timestamp: now,
-                source: 'fallback'
-            }
+            XLM: { price: 0.354, change: 0, timestamp: now, source: 'fallback', stale: true },
+            USDC: { price: 1.0, change: 0, timestamp: now, source: 'fallback', stale: true },
+            BTC: { price: 110000, change: 0, timestamp: now, source: 'fallback', stale: true },
+            ETH: { price: 4200, change: 0, timestamp: now, source: 'fallback', stale: true },
         }
     }
 
@@ -564,6 +572,25 @@ export class ReflectorService {
     clearCache(): void {
         this.priceCache.clear()
         console.log('[DEBUG] Price cache cleared')
+    }
+
+    /**
+     * Persists a price to the database so it survives restarts.
+     * Called after successful fetches from Reflector or CoinGecko.
+     */
+    private async persistPriceToDb(asset: string, price: number, source: string): Promise<void> {
+        try {
+            await upsertPrice(asset, price, source)
+        } catch (err) {
+            logger.warn(`[Reflector] Failed to persist price for ${asset} to DB:`, err)
+        }
+    }
+
+    /**
+     * Checks if a cached price is stale (older than STALE_THRESHOLD_MS).
+     */
+    private isStale(fetchedAt: Date): boolean {
+        return Date.now() - fetchedAt.getTime() > STALE_THRESHOLD_MS
     }
 
     getCacheStatus(): Record<string, any> {
