@@ -454,6 +454,38 @@ router.get("/prices", async (req, res) => {
   }
 });
 
+// Price freshness status - lightweight check for frontend
+router.get("/prices/status", async (req, res) => {
+  try {
+    const prices = await reflectorService.getCurrentPrices();
+    const entries = Object.entries(prices);
+    const staleCount = entries.filter(([, p]) => (p as any).stale).length;
+    const totalCount = entries.length;
+    const anyStale = staleCount > 0;
+
+    const sources = [...new Set(entries.map(([, p]) => (p as any).source))];
+
+    res.json({
+      success: true,
+      healthy: !anyStale,
+      stale: anyStale,
+      staleAssets: staleCount,
+      totalAssets: totalCount,
+      sources,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[ERROR] Price status check failed:", error);
+    res.status(500).json({
+      success: false,
+      healthy: false,
+      stale: true,
+      error: "Failed to check price status",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // Enhanced prices endpoint with risk analysis
 router.get("/prices/enhanced", async (req, res) => {
   try {
