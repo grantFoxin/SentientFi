@@ -300,16 +300,6 @@ server.listen(port, async () => {
         console.error('[CHAIN-INDEXER] Failed to start:', error)
     }
 
-    // Periodic cleanup of stale price cache entries (every 6 hours)
-    const { ReflectorService } = await import('./services/reflector.js')
-    const reflectorForCleanup = new ReflectorService()
-    setInterval(async () => {
-        try {
-            await reflectorForCleanup.cleanupStaleCache()
-        } catch (err) {
-            console.error('[CACHE-CLEANUP] Failed:', err)
-        }
-    }, 6 * 60 * 60 * 1000)
 
     console.log('Available endpoints:')
     console.log(`  Health: http://localhost:${port}/health`)

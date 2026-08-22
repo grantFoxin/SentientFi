@@ -483,6 +483,9 @@ export class ReflectorService {
     }
 
     private async getFallbackPrices(): Promise<PricesMap> {
+        // NOTE: callers in getCurrentPrices() already check ALLOW_FALLBACK_PRICES
+        // and throw before reaching this method when the flag is off. If that
+        // guard is ever removed, this method should check the flag itself.
         logger.warn('[FALLBACK] All price sources failed, checking database cache')
 
         try {

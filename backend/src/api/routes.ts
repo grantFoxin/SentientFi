@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import type { PriceData } from "../types/index.js";
 import { StellarService } from "../services/stellar.js";
 import { ReflectorService } from "../services/reflector.js";
 import { RebalanceHistoryService } from "../services/rebalanceHistory.js";
@@ -458,12 +459,12 @@ router.get("/prices", async (req, res) => {
 router.get("/prices/status", async (req, res) => {
   try {
     const prices = await reflectorService.getCurrentPrices();
-    const entries = Object.entries(prices);
-    const staleCount = entries.filter(([, p]) => (p as any).stale).length;
+    const entries = Object.entries(prices) as [string, PriceData][];
+    const staleCount = entries.filter(([, p]) => p.stale).length;
     const totalCount = entries.length;
     const anyStale = staleCount > 0;
 
-    const sources = [...new Set(entries.map(([, p]) => (p as any).source))];
+    const sources = [...new Set(entries.map(([, p]) => p.source))];
 
     res.json({
       success: true,
@@ -1525,5 +1526,14 @@ router.get("/queue/health", async (req, res) => {
     });
   }
 });
+
+// Periodic cleanup of stale price cache entries (every 6 hours)
+setInterval(async () => {
+  try {
+    await reflectorService.cleanupStaleCache();
+  } catch (err) {
+    console.error("[CACHE-CLEANUP] Failed:", err);
+  }
+}, 6 * 60 * 60 * 1000);
 
 export { router as portfolioRouter };
