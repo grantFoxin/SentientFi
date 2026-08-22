@@ -3,8 +3,9 @@ export interface PriceData {
     price: number
     change: number
     timestamp: number
-    source?: 'reflector' | 'coingecko_pro' | 'coingecko_free' | 'external' | 'fallback'
+    source?: 'reflector' | 'coingecko_pro' | 'coingecko_free' | 'external' | 'fallback' | 'cached'
     volume?: number
+    stale?: boolean
 }
 
 // Price map type - using type alias as expected by risk management service
