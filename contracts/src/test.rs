@@ -488,6 +488,25 @@ fn test_concurrent_portfolio_creation() {
 }
 
 #[test]
+fn test_create_portfolio_empty_allocations() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Empty allocations map — sum is 0, not 100
+    let empty_allocations = Map::new(&env);
+
+    let result = client.try_create_portfolio(&user, &empty_allocations, &5);
+    assert_eq!(result, Err(Ok(Error::InvalidAllocation)));
+}
+
+#[test]
 #[should_panic]
 fn test_get_portfolio_not_found() {
     let env = Env::default();
