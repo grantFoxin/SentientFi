@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, AlertCircle, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle } from 'lucide-react'
+import { TrendingUp, AlertCircle, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Pencil, Trash2, X } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import AssetCard from './AssetCard'
@@ -29,6 +29,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
     const [priceSource, setPriceSource] = useState<string>('loading...')
     const [pricesStale, setPricesStale] = useState(false)
     const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'notifications' | 'test-notifications'>('overview')
+    const [showEditModal, setShowEditModal] = useState(false)
+    const [editAllocations, setEditAllocations] = useState<Record<string, number>>({})
+    const [editThreshold, setEditThreshold] = useState(5)
+    const [editLoading, setEditLoading] = useState(false)
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const [deleteLoading, setDeleteLoading] = useState(false)
     const { isDark } = useTheme()
 
     useEffect(() => {
@@ -176,6 +182,74 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
     const disconnectWallet = () => {
         StellarWallet.disconnect()
         onNavigate('landing')
+    }
+
+    const openEditModal = () => {
+        if (!portfolioData || portfolioData.id === 'demo') return
+        // Pre-fill with current allocations
+        const currentAllocations: Record<string, number> = {}
+        if (Array.isArray(portfolioData.allocations)) {
+            portfolioData.allocations.forEach((alloc: any) => {
+                currentAllocations[alloc.asset] = alloc.target || alloc.percentage
+            })
+        } else if (portfolioData.allocations) {
+            Object.assign(currentAllocations, portfolioData.allocations)
+        }
+        setEditAllocations(currentAllocations)
+        setEditThreshold(portfolioData.threshold || 5)
+        setShowEditModal(true)
+    }
+
+    const handleEditSubmit = async () => {
+        if (!portfolioData?.id) return
+        setEditLoading(true)
+        try {
+            const response = await fetch(`${API_CONFIG.BASE_URL}/api/portfolio/${portfolioData.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Public-Key': publicKey || ''
+                },
+                body: JSON.stringify({ allocations: editAllocations, threshold: editThreshold })
+            })
+            if (response.ok) {
+                setShowEditModal(false)
+                fetchPortfolioData()
+            } else {
+                const err = await response.json()
+                alert(err.error || 'Failed to update portfolio')
+            }
+        } catch (error) {
+            console.error('Update failed:', error)
+            alert('Failed to update portfolio')
+        } finally {
+            setEditLoading(false)
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!portfolioData?.id) return
+        setDeleteLoading(true)
+        try {
+            const response = await fetch(`${API_CONFIG.BASE_URL}/api/portfolio/${portfolioData.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-Public-Key': publicKey || ''
+                }
+            })
+            if (response.ok || response.status === 204) {
+                setShowDeleteConfirm(false)
+                setPortfolioData(null)
+                onNavigate('setup')
+            } else {
+                alert('Failed to delete portfolio')
+            }
+        } catch (error) {
+            console.error('Delete failed:', error)
+            alert('Failed to delete portfolio')
+        } finally {
+            setDeleteLoading(false)
+        }
     }
 
     // Create allocation data from portfolio data
@@ -326,6 +400,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                                 >
                                     Create Portfolio
                                 </button>
+                                {portfolioData && portfolioData.id !== 'demo' && (
+                                    <>
+                                        <button
+                                            onClick={openEditModal}
+                                            className="flex items-center gap-1.5 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg text-sm transition-colors"
+                                        >
+                                            <Pencil className="w-4 h-4" />
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => setShowDeleteConfirm(true)}
+                                            className="flex items-center gap-1.5 border border-red-200 dark:border-red-800 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 px-3 py-2 rounded-lg text-sm transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Delete
+                                        </button>
+                                    </>
+                                )}
                                 <button
                                     onClick={disconnectWallet}
                                     className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-3 py-2 text-sm transition-colors"
@@ -613,6 +705,98 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                     </>
                 )}
             </div>
+
+            {/* Edit Portfolio Modal */}
+            {showEditModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Portfolio</h3>
+                            <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Allocations</label>
+                                {Object.entries(editAllocations).map(([asset, value]) => (
+                                    <div key={asset} className="flex items-center gap-2 mb-2">
+                                        <span className="text-sm text-gray-600 dark:text-gray-400 w-16">{asset}</span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            value={value}
+                                            onChange={(e) => setEditAllocations(prev => ({ ...prev, [asset]: Number(e.target.value) }))}
+                                            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        />
+                                        <span className="text-sm text-gray-500">%</span>
+                                    </div>
+                                ))}
+                                <p className={`text-xs mt-1 ${Math.abs(Object.values(editAllocations).reduce((s, v) => s + v, 0) - 100) < 0.01 ? 'text-green-600' : 'text-red-500'}`}>
+                                    Total: {Object.values(editAllocations).reduce((s, v) => s + v, 0).toFixed(1)}%
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Threshold (%)</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={50}
+                                    value={editThreshold}
+                                    onChange={(e) => setEditThreshold(Number(e.target.value))}
+                                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleEditSubmit}
+                                disabled={editLoading || Math.abs(Object.values(editAllocations).reduce((s, v) => s + v, 0) - 100) >= 0.01}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white py-2 rounded-lg text-sm font-medium"
+                            >
+                                {editLoading ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Dialog */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-sm w-full p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Portfolio</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                            Are you sure you want to delete this portfolio? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                disabled={deleteLoading}
+                                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white py-2 rounded-lg text-sm font-medium"
+                            >
+                                {deleteLoading ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

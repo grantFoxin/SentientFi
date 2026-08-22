@@ -84,5 +84,22 @@ export const recordRebalanceEventSchema = z.object({
     isSimulated: strictBoolean.optional()
 }).strict();
 
+// Schema for PUT /portfolio/:id — partial updates, at least one field required
+export const updatePortfolioSchema = z.object({
+    allocations: z.record(z.string(), z.number().min(0).max(100)).refine(
+        (allocations) => {
+            const total = Object.values(allocations).reduce((sum, val) => sum + val, 0);
+            return Math.abs(total - 100) <= 0.01;
+        },
+        {
+            message: "Allocations must sum to 100%",
+        }
+    ).optional(),
+    threshold: z.number().min(1, "Threshold must be between 1% and 50%").max(50, "Threshold must be between 1% and 50%").optional(),
+}).strict().refine(
+    (data) => data.allocations !== undefined || data.threshold !== undefined,
+    { message: "At least one of allocations or threshold must be provided" }
+);
+
 // Auto-Rebalancer control schemas (must be entirely empty payloads)
 export const autoRebalancerControlSchema = z.object({}).strict();

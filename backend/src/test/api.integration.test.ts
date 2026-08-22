@@ -348,6 +348,245 @@ describe('Portfolio Management - GET /api/user/:address/portfolios', () => {
     })
 })
 
+// ─── Portfolio Update Tests ─────────────────────────────────────────────────
+
+describe('Portfolio Management - PUT /api/portfolio/:id', () => {
+    it('should update allocations with valid data', async () => {
+        const userAddress = 'GPUT123456789ABCDEF0'
+        const createPayload = {
+            userAddress,
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const updateResponse = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', userAddress)
+            .send({ allocations: { XLM: 70, USDC: 30 } })
+            .expect(200)
+
+        expect(updateResponse.body.success).toBe(true)
+        expect(updateResponse.body.portfolio.allocations).toEqual({ XLM: 70, USDC: 30 })
+    })
+
+    it('should update threshold with valid data', async () => {
+        const userAddress = 'GPUT123456789ABCDEF1'
+        const createPayload = {
+            userAddress,
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const updateResponse = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', userAddress)
+            .send({ threshold: 10 })
+            .expect(200)
+
+        expect(updateResponse.body.success).toBe(true)
+        expect(updateResponse.body.portfolio.threshold).toBe(10)
+    })
+
+    it('should return 404 for nonexistent portfolio', async () => {
+        const response = await request(app)
+            .put('/api/portfolio/nonexistent-id-xyz')
+            .set('X-Public-Key', 'GTEST123456789ABCDEF0')
+            .send({ threshold: 10 })
+            .expect(404)
+
+        expect(response.body.error).toBe('Portfolio not found')
+    })
+
+    it('should return 400 for invalid allocations (not summing to 100%)', async () => {
+        const userAddress = 'GPUT123456789ABCDEF2'
+        const createPayload = {
+            userAddress,
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', userAddress)
+            .send({ allocations: { XLM: 60, USDC: 30 } })
+            .expect(400)
+
+        expect(response.body.error).toBe('Invalid request payload')
+    })
+
+    it('should return 400 for empty body', async () => {
+        const userAddress = 'GPUT123456789ABCDEF3'
+        const createPayload = {
+            userAddress,
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', userAddress)
+            .send({})
+            .expect(400)
+
+        expect(response.body.error).toBe('Invalid request payload')
+    })
+
+    it('should return 401 when X-Public-Key header is missing', async () => {
+        const createPayload = {
+            userAddress: 'GPUT123456789ABCDEF5',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .send({ threshold: 10 })
+            .expect(401)
+
+        expect(response.body.error).toContain('X-Public-Key')
+    })
+
+    it('should return 403 when caller is not the portfolio owner', async () => {
+        const createPayload = {
+            userAddress: 'GPUT123456789ABCDEF4',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .put(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', 'GDIFFERENT123456789ABCDEF')
+            .send({ threshold: 10 })
+            .expect(403)
+
+        expect(response.body.error).toContain('Not authorized')
+    })
+})
+
+// ─── Portfolio Delete Tests ─────────────────────────────────────────────────
+
+describe('Portfolio Management - DELETE /api/portfolio/:id', () => {
+    it('should delete a portfolio and return 204', async () => {
+        const userAddress = 'GDEL123456789ABCDEF0'
+        const createPayload = {
+            userAddress,
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        await request(app)
+            .delete(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', userAddress)
+            .expect(204)
+
+        // Verify it's gone
+        await request(app)
+            .get(`/api/portfolio/${portfolioId}`)
+            .expect(404)
+    })
+
+    it('should return 404 for nonexistent portfolio', async () => {
+        const response = await request(app)
+            .delete('/api/portfolio/nonexistent-id-xyz')
+            .set('X-Public-Key', 'GTEST123456789ABCDEF0')
+            .expect(404)
+
+        expect(response.body.error).toBe('Portfolio not found')
+    })
+
+    it('should return 401 when X-Public-Key header is missing', async () => {
+        const createPayload = {
+            userAddress: 'GDEL123456789ABCDEF2',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .delete(`/api/portfolio/${portfolioId}`)
+            .expect(401)
+
+        expect(response.body.error).toContain('X-Public-Key')
+    })
+
+    it('should return 403 when caller is not the portfolio owner', async () => {
+        const createPayload = {
+            userAddress: 'GDEL123456789ABCDEF1',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const createResponse = await request(app)
+            .post('/api/portfolio')
+            .send(createPayload)
+            .expect(201)
+
+        const portfolioId = createResponse.body.portfolio.id
+
+        const response = await request(app)
+            .delete(`/api/portfolio/${portfolioId}`)
+            .set('X-Public-Key', 'GDIFFERENT123456789ABCDEF')
+            .expect(403)
+
+        expect(response.body.error).toContain('Not authorized')
+    })
+})
+
 // ─── Notification userId Validation Tests ────────────────────────────────────
 
 describe('Notifications - userId must be a valid Stellar public key', () => {
