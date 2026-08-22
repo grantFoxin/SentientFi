@@ -488,6 +488,22 @@ fn test_concurrent_portfolio_creation() {
 }
 
 #[test]
+#[should_panic]
+fn test_get_portfolio_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Query a portfolio ID that was never created — should panic (unwrap on None)
+    client.get_portfolio(&9999);
+}
+
+#[test]
 fn test_set_emergency_stop_blocks_rebalance() {
     let env = Env::default();
     env.mock_all_auths();
