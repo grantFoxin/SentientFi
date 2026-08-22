@@ -489,6 +489,51 @@ fn test_concurrent_portfolio_creation() {
 
 #[test]
 #[should_panic]
+fn test_execute_rebalance_not_owner() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10000;
+    });
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset, 100);
+    let pid = client.create_portfolio(&owner, &allocations, &5);
+
+    // Advance past cooldown
+    env.ledger().with_mut(|li| {
+        li.timestamp = 20000;
+    });
+
+    // Switch to targeted auth: only authorize intruder (not the portfolio owner)
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &intruder,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "execute_rebalance",
+                args: (pid,).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // Intruder tries to rebalance owner's portfolio — should panic on require_auth
+    client.execute_rebalance(&pid);
+}
+
+#[test]
+#[should_panic]
 fn test_deposit_wrong_portfolio() {
     let env = Env::default();
     // Use mock_all_auths for setup (initialize + create_portfolio)
