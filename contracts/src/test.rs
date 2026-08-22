@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, Map, Vec, Symbol, Val};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, IntoVal, Map, Vec, Symbol, Val};
 
 // Mock Reflector Contract
 mod reflector_contract {
