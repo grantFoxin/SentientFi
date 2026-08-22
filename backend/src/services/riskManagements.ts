@@ -76,6 +76,13 @@ export class RiskManagementService {
     }
 
     updatePriceData(prices: PricesMap): RiskAlert[] {
+        // Don't update risk models with stale data — it would corrupt
+        // volatility, VaR, and correlation calculations
+        const hasStale = Object.values(prices).some(p => p.stale === true)
+        if (hasStale) {
+            return []
+        }
+
         const alerts: RiskAlert[] = []
         const timestamp = Date.now()
 
