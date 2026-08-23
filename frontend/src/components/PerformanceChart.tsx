@@ -19,8 +19,10 @@ interface AnalyticsData {
 interface PerformanceSummary {
     metrics: {
         totalReturn: number
-        dailyChange: number
-        weeklyChange: number
+        dailyChange: number | null
+        weeklyChange: number | null
+        monthlyChange: number | null
+        allTimeChange: number | null
         maxDrawdown: number
         bestDay: { date: string; change: number }
         worstDay: { date: string; change: number }
@@ -102,9 +104,30 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
         }).format(value)
     }
 
-    const formatPercentage = (value: number) => {
+    const formatPercentage = (value: number | null) => {
+        if (value === null || value === undefined) return '—'
         return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
     }
+
+    const formatChangeCard = (label: string, value: number | null, icon: React.ReactNode) => (
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
+                {icon}
+            </div>
+            <div className={`text-2xl font-bold ${
+                value === null ? 'text-gray-400 dark:text-gray-500' :
+                value >= 0 ? 'text-green-600' : 'text-red-600'
+            }`}>
+                {formatPercentage(value)}
+            </div>
+            {value === null && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Insufficient data
+                </div>
+            )}
+        </div>
+    )
 
     if (!portfolioId || portfolioId === 'demo') {
         return (
@@ -235,47 +258,39 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ portfolioId }) => {
 
             {metrics && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-400">Total Return</span>
-                            {metrics.totalReturn >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
-                            )}
-                        </div>
-                        <div className={`text-2xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatPercentage(metrics.totalReturn)}
-                        </div>
-                    </div>
+                    {formatChangeCard(
+                        'Total Return',
+                        metrics.totalReturn,
+                        metrics.totalReturn >= 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-400">Daily Change</span>
-                            {metrics.dailyChange >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
-                            )}
-                        </div>
-                        <div className={`text-2xl font-bold ${metrics.dailyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatPercentage(metrics.dailyChange)}
-                        </div>
-                    </div>
+                    {formatChangeCard(
+                        'Daily Change',
+                        metrics.dailyChange,
+                        metrics.dailyChange === null ? <AlertCircle className="w-4 h-4 text-gray-400" /> :
+                        metrics.dailyChange >= 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-400">Weekly Change</span>
-                            {metrics.weeklyChange >= 0 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
-                            )}
-                        </div>
-                        <div className={`text-2xl font-bold ${metrics.weeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatPercentage(metrics.weeklyChange)}
-                        </div>
-                    </div>
+                    {formatChangeCard(
+                        'Weekly Change',
+                        metrics.weeklyChange,
+                        metrics.weeklyChange === null ? <AlertCircle className="w-4 h-4 text-gray-400" /> :
+                        metrics.weeklyChange >= 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
+
+                    {formatChangeCard(
+                        'Monthly Change',
+                        metrics.monthlyChange,
+                        metrics.monthlyChange === null ? <AlertCircle className="w-4 h-4 text-gray-400" /> :
+                        metrics.monthlyChange >= 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
+
+                    {formatChangeCard(
+                        'All-Time Change',
+                        metrics.allTimeChange,
+                        metrics.allTimeChange === null ? <AlertCircle className="w-4 h-4 text-gray-400" /> :
+                        metrics.allTimeChange >= 0 ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
 
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-2">

@@ -1,6 +1,13 @@
 import { portfolioStorage } from './portfolioStorage.js'
 import { ReflectorService } from './reflector.js'
 import { logger } from '../utils/logger.js'
+import {
+    dbInsertAnalyticsSnapshot,
+    dbGetAnalyticsSnapshots,
+    dbGetLatestSnapshot,
+    dbGetSnapshotAt,
+    dbGetClosestSnapshot,
+} from '../db/analyticsDb.js'
 
 interface PortfolioSnapshot {
     portfolioId: string
@@ -12,8 +19,10 @@ interface PortfolioSnapshot {
 
 interface PerformanceMetrics {
     totalReturn: number
-    dailyChange: number
-    weeklyChange: number
+    dailyChange: number | null
+    weeklyChange: number | null
+    monthlyChange: number | null
+    allTimeChange: number | null
     maxDrawdown: number
     bestDay: { date: string; change: number }
     worstDay: { date: string; change: number }
@@ -22,7 +31,6 @@ interface PerformanceMetrics {
 }
 
 class AnalyticsService {
-    private snapshots: Map<string, PortfolioSnapshot[]> = new Map()
     private lastSnapshotTimes: Map<string, number> = new Map()
     private readonly MIN_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000
 
@@ -76,25 +84,13 @@ class AnalyticsService {
                 allocations[asset] = totalValue > 0 ? (value / totalValue) * 100 : 0
             }
 
-            const snapshot: PortfolioSnapshot = {
-                portfolioId,
-                timestamp: new Date().toISOString(),
-                totalValue,
-                allocations,
-                balances: { ...portfolio.balances },
-            }
-
-            if (!this.snapshots.has(portfolioId)) {
-                this.snapshots.set(portfolioId, [])
-            }
-
-            const snapshotsForPortfolio = this.snapshots.get(portfolioId)!
-            snapshotsForPortfolio.push(snapshot)
             this.lastSnapshotTimes.set(portfolioId, now)
 
-            const maxSnapshots = 1000
-            if (snapshotsForPortfolio.length > maxSnapshots) {
-                snapshotsForPortfolio.shift()
+            // Persist to database
+            try {
+                await dbInsertAnalyticsSnapshot(portfolioId, totalValue, allocations, { ...portfolio.balances })
+            } catch (dbError) {
+                logger.error('Failed to persist snapshot to DB', { portfolioId, error: dbError })
             }
 
             logger.info('Portfolio snapshot captured', { portfolioId, totalValue })
@@ -103,25 +99,103 @@ class AnalyticsService {
         }
     }
 
-    getAnalytics(portfolioId: string, days: number = 30): PortfolioSnapshot[] {
-        const snapshots = this.snapshots.get(portfolioId) || []
-        const cutoffDate = new Date()
-        cutoffDate.setDate(cutoffDate.getDate() - days)
-
-        return snapshots.filter(snapshot => {
-            const snapshotDate = new Date(snapshot.timestamp)
-            return snapshotDate >= cutoffDate
-        })
+    async getAnalytics(portfolioId: string, days: number = 30): Promise<PortfolioSnapshot[]> {
+        try {
+            return await dbGetAnalyticsSnapshots(portfolioId, days)
+        } catch (error) {
+            logger.error('Failed to get analytics from DB', { portfolioId, error })
+            return []
+        }
     }
 
-    calculatePerformanceMetrics(portfolioId: string): PerformanceMetrics {
-        const snapshots = this.getAnalytics(portfolioId, 90)
+    /**
+     * Compute percentage change between two snapshot values.
+     * Returns null when the baseline is zero or missing.
+     */
+    private pctChange(current: number, previous: number): number | null {
+        if (previous === 0) return null
+        return ((current - previous) / previous) * 100
+    }
+
+    async calculateDayChange(portfolioId: string): Promise<number | null> {
+        try {
+            const latest = await dbGetLatestSnapshot(portfolioId)
+            if (!latest) return null
+
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+            const twoHourWindow = 2 * 60 * 60 * 1000
+
+            const previous = await dbGetClosestSnapshot(portfolioId, oneDayAgo, twoHourWindow)
+            if (!previous) return null
+
+            return this.pctChange(latest.totalValue, previous.totalValue)
+        } catch (error) {
+            logger.error('Failed to calculate day change', { portfolioId, error })
+            return null
+        }
+    }
+
+    async calculateWeekChange(portfolioId: string): Promise<number | null> {
+        try {
+            const latest = await dbGetLatestSnapshot(portfolioId)
+            if (!latest) return null
+
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            const sixHourWindow = 6 * 60 * 60 * 1000
+
+            const previous = await dbGetClosestSnapshot(portfolioId, oneWeekAgo, sixHourWindow)
+            if (!previous) return null
+
+            return this.pctChange(latest.totalValue, previous.totalValue)
+        } catch (error) {
+            logger.error('Failed to calculate week change', { portfolioId, error })
+            return null
+        }
+    }
+
+    async calculateMonthChange(portfolioId: string): Promise<number | null> {
+        try {
+            const latest = await dbGetLatestSnapshot(portfolioId)
+            if (!latest) return null
+
+            const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+            const twelveHourWindow = 12 * 60 * 60 * 1000
+
+            const previous = await dbGetClosestSnapshot(portfolioId, oneMonthAgo, twelveHourWindow)
+            if (!previous) return null
+
+            return this.pctChange(latest.totalValue, previous.totalValue)
+        } catch (error) {
+            logger.error('Failed to calculate month change', { portfolioId, error })
+            return null
+        }
+    }
+
+    async calculateAllTimeChange(portfolioId: string): Promise<number | null> {
+        try {
+            const latest = await dbGetLatestSnapshot(portfolioId)
+            if (!latest) return null
+
+            const first = await dbGetSnapshotAt(portfolioId, new Date(0))
+            if (!first) return null
+
+            return this.pctChange(latest.totalValue, first.totalValue)
+        } catch (error) {
+            logger.error('Failed to calculate all-time change', { portfolioId, error })
+            return null
+        }
+    }
+
+    async calculatePerformanceMetrics(portfolioId: string): Promise<PerformanceMetrics> {
+        const snapshots = await this.getAnalytics(portfolioId, 90)
 
         if (snapshots.length < 2) {
             return {
                 totalReturn: 0,
-                dailyChange: 0,
-                weeklyChange: 0,
+                dailyChange: null,
+                weeklyChange: null,
+                monthlyChange: null,
+                allTimeChange: null,
                 maxDrawdown: 0,
                 bestDay: { date: '', change: 0 },
                 worstDay: { date: '', change: 0 },
@@ -149,11 +223,12 @@ class AnalyticsService {
             dailyChangeData.push({ date: sortedSnapshots[i].timestamp, change })
         }
 
-        const dailyChange = dailyChanges.length > 0 ? dailyChanges[dailyChanges.length - 1] : 0
-
-        const weekAgoIndex = Math.max(0, sortedSnapshots.length - 7)
-        const weekAgoValue = sortedSnapshots[weekAgoIndex].totalValue
-        const weeklyChange = weekAgoValue > 0 ? ((finalValue - weekAgoValue) / weekAgoValue) * 100 : 0
+        const [dailyChange, weeklyChange, monthlyChange, allTimeChange] = await Promise.all([
+            this.calculateDayChange(portfolioId),
+            this.calculateWeekChange(portfolioId),
+            this.calculateMonthChange(portfolioId),
+            this.calculateAllTimeChange(portfolioId),
+        ])
 
         let maxDrawdown = 0
         let peak = initialValue
@@ -191,6 +266,8 @@ class AnalyticsService {
             totalReturn,
             dailyChange,
             weeklyChange,
+            monthlyChange,
+            allTimeChange,
             maxDrawdown,
             bestDay: bestDay.change !== -Infinity ? bestDay : { date: '', change: 0 },
             worstDay: worstDay.change !== Infinity ? worstDay : { date: '', change: 0 },
@@ -199,9 +276,9 @@ class AnalyticsService {
         }
     }
 
-    getPerformanceSummary(portfolioId: string) {
-        const metrics = this.calculatePerformanceMetrics(portfolioId)
-        const snapshots = this.getAnalytics(portfolioId, 30)
+    async getPerformanceSummary(portfolioId: string) {
+        const metrics = await this.calculatePerformanceMetrics(portfolioId)
+        const snapshots = await this.getAnalytics(portfolioId, 30)
 
         return {
             metrics,
