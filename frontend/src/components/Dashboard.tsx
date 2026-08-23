@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, AlertCircle, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Pencil, Trash2, X } from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertCircle, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Pencil, Trash2, X } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import AssetCard from './AssetCard'
@@ -131,7 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
         setPortfolioData({
             id: 'demo',
             totalValue: 10000,
-            dayChange: 0.85,
+            dayChange: null,
             needsRebalance: false,
             lastRebalance: '2 hours ago',
             allocations: [
@@ -553,8 +553,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, publicKey }) => {
                                                 ${portfolioData?.totalValue?.toLocaleString() || '0'}
                                             </div>
                                             <div className="flex items-center mt-1">
-                                                <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
-                                                <span className="text-green-500 font-medium">+{portfolioData?.dayChange || 0}%</span>
+                                                {portfolioData?.dayChange != null ? (
+                                                    <>
+                                                        {portfolioData.dayChange >= 0 ? (
+                                                            <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
+                                                        ) : (
+                                                            <TrendingDown className="w-4 h-4 text-red-500 mr-1" />
+                                                        )}
+                                                        <span className={`font-medium ${portfolioData.dayChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                            {portfolioData.dayChange >= 0 ? '+' : ''}{portfolioData.dayChange.toFixed(2)}%
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <span className="text-gray-400 dark:text-gray-500 font-medium">—</span>
+                                                )}
                                                 <span className="text-gray-500 dark:text-gray-400 ml-2">Today</span>
                                             </div>
                                         </div>

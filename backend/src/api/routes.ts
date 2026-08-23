@@ -917,7 +917,7 @@ router.get("/portfolio/:id/analytics", async (req, res) => {
       return res.status(404).json({ error: "Portfolio not found" });
     }
 
-    const analytics = analyticsService.getAnalytics(portfolioId, days);
+    const analytics = await analyticsService.getAnalytics(portfolioId, days);
 
     res.json({
       success: true,
@@ -952,7 +952,7 @@ router.get("/portfolio/:id/performance-summary", async (req, res) => {
       return res.status(404).json({ error: "Portfolio not found" });
     }
 
-    const summary = analyticsService.getPerformanceSummary(portfolioId);
+    const summary = await analyticsService.getPerformanceSummary(portfolioId);
 
     res.json({
       success: true,
