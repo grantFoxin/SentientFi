@@ -117,71 +117,30 @@ class AnalyticsService {
         return ((current - previous) / previous) * 100
     }
 
-    async calculateDayChange(portfolioId: string): Promise<number | null> {
+    /**
+     * Generic change calculator: finds the closest snapshot to `lookbackMs` ago
+     * within a `windowMs` tolerance and returns the % change from that snapshot
+     * to the latest one. Pass `windowMs = 0` to use `dbGetSnapshotAt` (exact-or-before)
+     * instead of `dbGetClosestSnapshot`.
+     */
+    async getChangeForWindow(
+        portfolioId: string,
+        lookbackMs: number,
+        windowMs: number
+    ): Promise<number | null> {
         try {
             const latest = await dbGetLatestSnapshot(portfolioId)
             if (!latest) return null
 
-            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-            const twoHourWindow = 2 * 60 * 60 * 1000
-
-            const previous = await dbGetClosestSnapshot(portfolioId, oneDayAgo, twoHourWindow)
+            const targetTime = new Date(Date.now() - lookbackMs)
+            const previous = windowMs > 0
+                ? await dbGetClosestSnapshot(portfolioId, targetTime, windowMs)
+                : await dbGetSnapshotAt(portfolioId, targetTime)
             if (!previous) return null
 
             return this.pctChange(latest.totalValue, previous.totalValue)
         } catch (error) {
-            logger.error('Failed to calculate day change', { portfolioId, error })
-            return null
-        }
-    }
-
-    async calculateWeekChange(portfolioId: string): Promise<number | null> {
-        try {
-            const latest = await dbGetLatestSnapshot(portfolioId)
-            if (!latest) return null
-
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            const sixHourWindow = 6 * 60 * 60 * 1000
-
-            const previous = await dbGetClosestSnapshot(portfolioId, oneWeekAgo, sixHourWindow)
-            if (!previous) return null
-
-            return this.pctChange(latest.totalValue, previous.totalValue)
-        } catch (error) {
-            logger.error('Failed to calculate week change', { portfolioId, error })
-            return null
-        }
-    }
-
-    async calculateMonthChange(portfolioId: string): Promise<number | null> {
-        try {
-            const latest = await dbGetLatestSnapshot(portfolioId)
-            if (!latest) return null
-
-            const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-            const twelveHourWindow = 12 * 60 * 60 * 1000
-
-            const previous = await dbGetClosestSnapshot(portfolioId, oneMonthAgo, twelveHourWindow)
-            if (!previous) return null
-
-            return this.pctChange(latest.totalValue, previous.totalValue)
-        } catch (error) {
-            logger.error('Failed to calculate month change', { portfolioId, error })
-            return null
-        }
-    }
-
-    async calculateAllTimeChange(portfolioId: string): Promise<number | null> {
-        try {
-            const latest = await dbGetLatestSnapshot(portfolioId)
-            if (!latest) return null
-
-            const first = await dbGetSnapshotAt(portfolioId, new Date(0))
-            if (!first) return null
-
-            return this.pctChange(latest.totalValue, first.totalValue)
-        } catch (error) {
-            logger.error('Failed to calculate all-time change', { portfolioId, error })
+            logger.error('Failed to calculate change', { portfolioId, lookbackMs, windowMs, error })
             return null
         }
     }
@@ -224,10 +183,10 @@ class AnalyticsService {
         }
 
         const [dailyChange, weeklyChange, monthlyChange, allTimeChange] = await Promise.all([
-            this.calculateDayChange(portfolioId),
-            this.calculateWeekChange(portfolioId),
-            this.calculateMonthChange(portfolioId),
-            this.calculateAllTimeChange(portfolioId),
+            this.getChangeForWindow(portfolioId, 24 * 60 * 60 * 1000, 2 * 60 * 60 * 1000),
+            this.getChangeForWindow(portfolioId, 7 * 24 * 60 * 60 * 1000, 6 * 60 * 60 * 1000),
+            this.getChangeForWindow(portfolioId, 30 * 24 * 60 * 60 * 1000, 12 * 60 * 60 * 1000),
+            this.getChangeForWindow(portfolioId, Date.now(), 0),
         ])
 
         let maxDrawdown = 0
