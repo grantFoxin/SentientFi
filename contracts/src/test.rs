@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, Map, Vec, Symbol, Val};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, IntoVal, Map, Vec, Symbol, Val};
 
 // Mock Reflector Contract
 mod reflector_contract {
@@ -485,6 +485,221 @@ fn test_concurrent_portfolio_creation() {
     let portfolio_b = client.get_portfolio(&pid_b);
     assert_eq!(portfolio_a.user, user_a);
     assert_eq!(portfolio_b.user, user_b);
+}
+
+#[test]
+#[should_panic]
+fn test_execute_rebalance_not_owner() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10000;
+    });
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset, 100);
+    let pid = client.create_portfolio(&owner, &allocations, &5);
+
+    // Advance past cooldown
+    env.ledger().with_mut(|li| {
+        li.timestamp = 20000;
+    });
+
+    // Switch to targeted auth: only authorize intruder (not the portfolio owner)
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &intruder,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "execute_rebalance",
+                args: (pid,).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // Intruder tries to rebalance owner's portfolio — should panic on require_auth
+    client.execute_rebalance(&pid);
+}
+
+#[test]
+#[should_panic]
+fn test_deposit_wrong_portfolio() {
+    let env = Env::default();
+    // Use mock_all_auths for setup (initialize + create_portfolio)
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset.clone(), 100);
+    let pid = client.create_portfolio(&owner, &allocations, &5);
+
+    // Switch to targeted auth: only authorize intruder (not the portfolio owner)
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &intruder,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "deposit",
+                args: (pid, asset.clone(), 100i128).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // Intruder tries to deposit into owner's portfolio — should panic on require_auth
+    client.deposit(&pid, &asset, &100);
+}
+
+#[test]
+fn test_create_portfolio_empty_allocations() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Empty allocations map — sum is 0, not 100
+    let empty_allocations = Map::new(&env);
+
+    let result = client.try_create_portfolio(&user, &empty_allocations, &5);
+    assert_eq!(result, Err(Ok(Error::InvalidAllocation)));
+}
+
+#[test]
+fn test_get_portfolio_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Query a portfolio ID that was never created — try_ catches the panic as an error
+    let result = client.try_get_portfolio(&9999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_set_emergency_stop_blocks_rebalance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10000;
+    });
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset, 100);
+    let pid = client.create_portfolio(&user, &allocations, &5);
+
+    // Admin enables emergency stop
+    client.set_emergency_stop(&true);
+
+    // Try to rebalance — should be blocked
+    let result = client.try_execute_rebalance(&pid);
+    assert_eq!(result, Err(Ok(Error::EmergencyStop)));
+}
+
+#[test]
+fn test_set_emergency_stop_blocks_deposit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    client.initialize(&admin, &reflector_id);
+
+    // Create portfolio before enabling emergency stop
+    let mut allocations = Map::new(&env);
+    let asset = Address::generate(&env);
+    allocations.set(asset.clone(), 100);
+    let pid = client.create_portfolio(&user, &allocations, &5);
+
+    // Admin enables emergency stop
+    client.set_emergency_stop(&true);
+
+    // User tries to deposit — should be blocked
+    let result = client.try_deposit(&pid, &asset, &100);
+    assert_eq!(result, Err(Ok(Error::EmergencyStop)));
+}
+
+#[test]
+#[should_panic]
+fn test_set_emergency_stop_unauthorized() {
+    let env = Env::default();
+    // Do NOT use mock_all_auths — we want to control who is authorized
+    let contract_id = env.register_contract(None, PortfolioRebalancer);
+    let client = PortfolioRebalancerClient::new(&env, &contract_id);
+    let reflector_id = env.register_contract(None, reflector_contract::MockReflector);
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+
+    // Only authorize the admin for initialize
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &admin,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "initialize",
+                args: (&admin, &reflector_id).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+    client.initialize(&admin, &reflector_id);
+
+    // Now authorize only non_admin for the set_emergency_stop call.
+    // Since non_admin is NOT the admin, require_auth() on admin should fail.
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &non_admin,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_emergency_stop",
+                args: (true,).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // This should panic because admin.require_auth() fails when only non_admin is authorized
+    client.set_emergency_stop(&true);
 }
 
 #[test]
