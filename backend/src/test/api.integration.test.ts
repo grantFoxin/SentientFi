@@ -84,11 +84,9 @@ describe.skip('API Health Check', () => {
 
 describe('Portfolio Management - POST /api/portfolio', () => {
     it('should create a portfolio with valid input', async () => {
-        // userAddress deliberately not a real Stellar address here — the
-        // frontend sends a "demo-user" placeholder when no wallet is
-        // connected, and createPortfolioSchema doesn't require StrKey format.
+        const testAddress = Keypair.random().publicKey()
         const testPayload = {
-            userAddress: 'GTEST123456789ABCDEF0',
+            userAddress: testAddress,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -104,9 +102,42 @@ describe('Portfolio Management - POST /api/portfolio', () => {
         expect(response.body.portfolio.allocations).toEqual(testPayload.allocations)
     })
 
-    it('should return 400 for missing required fields', async () => {
+    it('should create a portfolio with demo-user address', async () => {
         const testPayload = {
-            userAddress: 'GTEST123456789'
+            userAddress: 'demo-user',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const response = await request(app)
+            .post('/api/portfolio')
+            .send(testPayload)
+            .expect(201)
+
+        expect(response.body.success).toBe(true)
+        expect(response.body.portfolio.id).toBeDefined()
+        expect(response.body.portfolio.userAddress).toBe('demo-user')
+    })
+
+    it('should reject an invalid userAddress', async () => {
+        const testPayload = {
+            userAddress: 'not-a-stellar-address',
+            allocations: { XLM: 60, USDC: 40 },
+            threshold: 5
+        }
+
+        const response = await request(app)
+            .post('/api/portfolio')
+            .send(testPayload)
+            .expect(400)
+
+        expect(response.body.error).toBe('Invalid request payload')
+    })
+
+    it('should return 400 for missing required fields', async () => {
+        const testAddress = Keypair.random().publicKey()
+        const testPayload = {
+            userAddress: testAddress
             // Missing allocations and threshold
         }
 
@@ -121,8 +152,9 @@ describe('Portfolio Management - POST /api/portfolio', () => {
     })
 
     it('should return 400 if allocations do not sum to 100%', async () => {
+        const testAddress = Keypair.random().publicKey()
         const testPayload = {
-            userAddress: 'GTEST123456789ABCDEF1',
+            userAddress: testAddress,
             allocations: { XLM: 60, USDC: 30 },
             threshold: 5
         }
@@ -136,8 +168,9 @@ describe('Portfolio Management - POST /api/portfolio', () => {
     })
 
     it('should return 400 if threshold is out of range', async () => {
+        const testAddress = Keypair.random().publicKey()
         const testPayload = {
-            userAddress: 'GTEST123456789ABCDEF2',
+            userAddress: testAddress,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 100
         }
@@ -151,8 +184,9 @@ describe('Portfolio Management - POST /api/portfolio', () => {
     })
 
     it('should return 400 if asset allocation is invalid', async () => {
+        const testAddress = Keypair.random().publicKey()
         const testPayload = {
-            userAddress: 'GTEST123456789ABCDEF3',
+            userAddress: testAddress,
             allocations: { XLM: 120, USDC: -20 },
             threshold: 5
         }
@@ -171,8 +205,9 @@ describe('Portfolio Management - POST /api/portfolio', () => {
 describe('Portfolio Management - GET /api/portfolio/:id', () => {
     it('should return portfolio data for valid portfolio ID', async () => {
         // First create a portfolio
+        const testAddress = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GGET123456789ABCDEF0',
+            userAddress: testAddress,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -267,8 +302,9 @@ describe('Rebalancing - POST /api/portfolio/:id/rebalance', () => {
         // before it even gets to checking balances or drift. Same generic
         // 500 + {success:false, error} shape every other service-layer
         // failure in this router uses.
+        const testAddress = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GREBALANCE123456789A',
+            userAddress: testAddress,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -311,7 +347,7 @@ describe('Rebalancing - POST /api/portfolio/:id/rebalance', () => {
 
 describe('Portfolio Management - GET /api/user/:address/portfolios', () => {
     it('should return user portfolios for valid address', async () => {
-        const userAddress = 'GUSER123456789ABCDEF0'
+        const userAddress = Keypair.random().publicKey()
 
         // Create a portfolio for this user
         const createPayload = {
@@ -340,7 +376,7 @@ describe('Portfolio Management - GET /api/user/:address/portfolios', () => {
         // route doesn't validate address format (it's a read, not an
         // identity-keyed write), a malformed address just matches nothing.
         const response = await request(app)
-            .get('/api/user/GNEWUSER123456789ABCDEF/portfolios')
+            .get(`/api/user/${Keypair.random().publicKey()}/portfolios`)
             .expect(200)
 
         expect(Array.isArray(response.body)).toBe(true)
@@ -352,7 +388,7 @@ describe('Portfolio Management - GET /api/user/:address/portfolios', () => {
 
 describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     it('should update allocations with valid data', async () => {
-        const userAddress = 'GPUT123456789ABCDEF0'
+        const userAddress = Keypair.random().publicKey()
         const createPayload = {
             userAddress,
             allocations: { XLM: 60, USDC: 40 },
@@ -377,7 +413,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     })
 
     it('should update threshold with valid data', async () => {
-        const userAddress = 'GPUT123456789ABCDEF1'
+        const userAddress = Keypair.random().publicKey()
         const createPayload = {
             userAddress,
             allocations: { XLM: 60, USDC: 40 },
@@ -404,7 +440,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     it('should return 404 for nonexistent portfolio', async () => {
         const response = await request(app)
             .put('/api/portfolio/nonexistent-id-xyz')
-            .set('X-Public-Key', 'GTEST123456789ABCDEF0')
+            .set('X-Public-Key', Keypair.random().publicKey())
             .send({ threshold: 10 })
             .expect(404)
 
@@ -412,7 +448,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     })
 
     it('should return 400 for invalid allocations (not summing to 100%)', async () => {
-        const userAddress = 'GPUT123456789ABCDEF2'
+        const userAddress = Keypair.random().publicKey()
         const createPayload = {
             userAddress,
             allocations: { XLM: 60, USDC: 40 },
@@ -436,7 +472,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     })
 
     it('should return 400 for empty body', async () => {
-        const userAddress = 'GPUT123456789ABCDEF3'
+        const userAddress = Keypair.random().publicKey()
         const createPayload = {
             userAddress,
             allocations: { XLM: 60, USDC: 40 },
@@ -460,8 +496,9 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     })
 
     it('should return 401 when X-Public-Key header is missing', async () => {
+        const testAddress2 = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GPUT123456789ABCDEF5',
+            userAddress: testAddress2,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -482,8 +519,9 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
     })
 
     it('should return 403 when caller is not the portfolio owner', async () => {
+        const testAddress3 = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GPUT123456789ABCDEF4',
+            userAddress: testAddress3,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -497,7 +535,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
 
         const response = await request(app)
             .put(`/api/portfolio/${portfolioId}`)
-            .set('X-Public-Key', 'GDIFFERENT123456789ABCDEF')
+            .set('X-Public-Key', Keypair.random().publicKey())
             .send({ threshold: 10 })
             .expect(403)
 
@@ -509,7 +547,7 @@ describe('Portfolio Management - PUT /api/portfolio/:id', () => {
 
 describe('Portfolio Management - DELETE /api/portfolio/:id', () => {
     it('should delete a portfolio and return 204', async () => {
-        const userAddress = 'GDEL123456789ABCDEF0'
+        const userAddress = Keypair.random().publicKey()
         const createPayload = {
             userAddress,
             allocations: { XLM: 60, USDC: 40 },
@@ -537,15 +575,16 @@ describe('Portfolio Management - DELETE /api/portfolio/:id', () => {
     it('should return 404 for nonexistent portfolio', async () => {
         const response = await request(app)
             .delete('/api/portfolio/nonexistent-id-xyz')
-            .set('X-Public-Key', 'GTEST123456789ABCDEF0')
+            .set('X-Public-Key', Keypair.random().publicKey())
             .expect(404)
 
         expect(response.body.error).toBe('Portfolio not found')
     })
 
     it('should return 401 when X-Public-Key header is missing', async () => {
+        const testAddress4 = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GDEL123456789ABCDEF2',
+            userAddress: testAddress4,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -565,8 +604,9 @@ describe('Portfolio Management - DELETE /api/portfolio/:id', () => {
     })
 
     it('should return 403 when caller is not the portfolio owner', async () => {
+        const testAddress5 = Keypair.random().publicKey()
         const createPayload = {
-            userAddress: 'GDEL123456789ABCDEF1',
+            userAddress: testAddress5,
             allocations: { XLM: 60, USDC: 40 },
             threshold: 5
         }
@@ -580,7 +620,7 @@ describe('Portfolio Management - DELETE /api/portfolio/:id', () => {
 
         const response = await request(app)
             .delete(`/api/portfolio/${portfolioId}`)
-            .set('X-Public-Key', 'GDIFFERENT123456789ABCDEF')
+            .set('X-Public-Key', Keypair.random().publicKey())
             .expect(403)
 
         expect(response.body.error).toContain('Not authorized')

@@ -99,9 +99,9 @@ const parseHistorySource = (
 // PORTFOLIO CRUD ROUTES
 // ================================
 
-// Create a portfolio. userAddress is deliberately not validated as a Stellar
-// address here (see createPortfolioSchema) — the frontend falls back to a
-// "demo-user" identifier when no wallet is connected.
+// Create a portfolio. userAddress is validated as a Stellar ed25519 public
+// key (see createPortfolioSchema). The literal "demo-user" is accepted for
+// demo mode, when the frontend runs without a connected wallet.
 router.post(
   "/portfolio",
   portfolioWriteRateLimiter,
