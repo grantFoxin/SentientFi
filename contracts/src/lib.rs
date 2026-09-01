@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, Map};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Map};
 
 mod portfolio;
 mod reflector;
@@ -93,13 +93,12 @@ impl PortfolioRebalancer {
         
         portfolio.user.require_auth();
         
-        // Verify asset is in portfolio (optional based on requirements, but good practice)
-        if !portfolio.target_allocations.contains_key(asset.clone()) {
-             // For now, allow depositing any asset, as users might deposit first then rebalance
-             // or maybe we should restrict? The issue says "valid and invalid inputs". 
-             // Let's assume valid input means positive amount and valid asset.
-        }
 
+        // Transfer real tokens from caller to contract via Soroban token interface.
+        // Must happen before balance update - if transfer fails, transaction reverts.
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&portfolio.user, &contract_address, &amount);
         let current_balance = portfolio.current_balances.get(asset.clone()).unwrap_or(0);
         portfolio.current_balances.set(asset.clone(), current_balance + amount);
         
