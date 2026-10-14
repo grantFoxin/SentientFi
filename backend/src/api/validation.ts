@@ -34,8 +34,14 @@ const strictBoolean = z.preprocess((val) => {
 }, z.boolean());
 
 // Schema for POST /portfolio
+// userAddress must be a valid Stellar ed25519 public key (G... address).
+// The special literal "demo-user" is also accepted to support demo mode
+// when no wallet is connected.
 export const createPortfolioSchema = z.object({
-    userAddress: z.string().min(1, "userAddress is required"),
+    userAddress: z.union([
+        stellarAddressSchema,
+        z.literal("demo-user"),
+    ]),
     allocations: z.record(z.string(), z.number().min(0).max(100)).refine(
         (allocations) => {
             const total = Object.values(allocations).reduce((sum, val) => sum + val, 0);
