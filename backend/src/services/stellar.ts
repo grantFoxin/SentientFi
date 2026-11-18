@@ -12,6 +12,9 @@ import {
 import { getFeatureFlags } from '../config/featureFlags.js'
 import { rebalanceHistoryService, riskManagementService } from './serviceContainer.js'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const DAY_CHANGE_WINDOW_MS = 2 * 60 * 60 * 1000
+
 interface StoredPortfolio {
     id: string
     userAddress: string
@@ -560,25 +563,23 @@ export class StellarService {
                 needsRebalance,
                 lastRebalance: portfolio.lastRebalance,
                 threshold: portfolio.threshold,
-                dayChange: this.calculateDayChange(allocations)
+                dayChange: await this.calculateDayChange(portfolioId)
             }
         } catch (error) {
             throw new Error(`Failed to fetch portfolio: ${error}`)
         }
     }
 
-    private calculateDayChange(allocations: Array<{ current: number }>): number {
-        let weightedChange = 0
-        let totalWeight = 0
-
-        for (const allocation of allocations) {
-            const priceChange = Math.random() * 4 - 2
-            const weight = allocation.current / 100
-            weightedChange += priceChange * weight
-            totalWeight += weight
-        }
-
-        return totalWeight > 0 ? weightedChange / totalWeight : 0
+    /**
+     * Real 24h change from recorded analytics snapshots (#57): the snapshot
+     * closest to 24h ago (within a 2h window) against the latest one, the same
+     * calculation `calculatePerformanceMetrics` uses for `dailyChange`.
+     * Returns null when there isn't enough history, so the dashboard shows
+     * "—" instead of a made-up number. This used to be `Math.random()`.
+     */
+    private async calculateDayChange(portfolioId: string): Promise<number | null> {
+        const { analyticsService } = await import('./analyticsService.js')
+        return analyticsService.getChangeForWindow(portfolioId, DAY_MS, DAY_CHANGE_WINDOW_MS)
     }
 
     private roundAmount(amount: number): number {
